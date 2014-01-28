@@ -33,100 +33,100 @@
         (update-in [:ns-context] #(merge % evt-ns-decls))
         (assoc :base-uri base-uri))))
 
-(defn- ign-ws-g 
+(defn- ign-ws-rf 
   [ctx]
   (fp/term (fn [evt]
              (and (= :text (:type evt))
                   (when-let [data (:data evt)]
                     (empty? (clojure.string/trim data)))))))
 
-(defn- ign-comm-g 
+(defn- ign-comm-rf 
   [ctx]
   (fp/term (fn [evt]
              (= :comment (:type evt)))))
 
-(defn- ign-pi-g 
+(defn- ign-pi-rf 
   [ctx]
   (fp/term (fn [evt]
              (= :pi (:type evt)))))
 
-(defn ignorable-g
+(defn ignorable-rf
   [ctx]
-  (fp/constant-semantics (fp/rep* (fp/alt (ign-ws-g ctx)
-                                          (ign-comm-g ctx)
-                                          (ign-pi-g ctx))) :ignorable))
+  (fp/constant-semantics (fp/rep* (fp/alt (ign-ws-rf ctx)
+                                          (ign-comm-rf ctx)
+                                          (ign-pi-rf ctx))) :ignorable))
 
 ;;; 
 
-(defn- doc-start-g 
+(defn- doc-start-rf 
   [ctx]                                 ;ctx not needed
   (fp/term (fn [evt]
              (= :start-document (:type evt)))))
 
-(defn- doc-end-g 
+(defn- doc-end-rf 
   [ctx]                                 ;ctx not needed
   (fp/term (fn [evt]
              (= :end-document (:type evt)))))
 
-(defn- non-elt-g 
+(defn- non-elt-rf 
   [ctx]                                 ;ctx not needed
   (fp/term (fn [evt]
              (and (not= :start-element (:type evt))
                   (not= :end-element (:type evt))))))
 
-(defn elt-start-g 
+(defn elt-start-rf 
   [ctx]                                 ;ctx not needed
   (fp/term (fn [evt]
              (= :start-element (:type evt)))))
 
-(defn elt-end-g 
+(defn elt-end-rf 
   [ctx qname]                           ;ctx not needed
   (fp/term (fn [evt]
              (let [ename (:qname evt)
                    etype (:type evt)]
                (and
                 (= :end-element etype)
-                (xmlutil/qn-eq ename qname))))))
+                (= ename qname))))))
 
-(defn elt-g 
+(defn elt-rf 
   [ctx]
-  (fp/complex [selt (elt-start-g ctx)
+  (fp/complex [selt (elt-start-rf ctx)
                content (let [nctx (nested-context ctx selt)]
-                         (fp/rep* (fp/alt (elt-g ctx)
-                                          (non-elt-g nctx))))
-               eelt (elt-end-g ctx (:qname selt))]
+                         (fp/rep* (fp/alt (elt-rf ctx)
+                                          (non-elt-rf nctx))))
+               eelt (elt-end-rf ctx (:qname selt))]
               [selt content eelt]))
 
 ;;; creates a "document" rule based on provided rule
-(defn- doc-wrapper-g
-  [model-g ctx]
-  (fp/complex [sdoc (doc-start-g ctx)
+(defn- doc-wrapper-rf
+  [model-rf ctx]
+  (fp/complex [sdoc (doc-start-rf ctx)
                c (let [nctx (nested-context ctx sdoc)]
-                   (model-g nctx))
-               edoc (doc-end-g ctx)]
+                   (model-rf nctx))
+               edoc (doc-end-rf ctx)]
               c))
 
-;;; creates a rule that accepts model-g either directly or wrappe din a document
-(defn opt-doc-g
-  [model-g ctx]
-  (fp/alt (model-g ctx)
-          (doc-wrapper-g model-g ctx)))
+;;; creates a rule that accepts model-rf either directly or wrappe din a document
+(defn opt-doc-rf
+  [model-rf ctx]
+  (fp/alt (model-rf ctx)
+          (doc-wrapper-rf model-rf ctx)))
 
-(defn well-formed-content-g 
+(defn well-formed-content-rf 
   [ctx]
-  (fp/conc (fp/rep* (non-elt-g ctx))
-           (elt-g ctx)
-           (fp/rep* (non-elt-g ctx))))
+  (fp/conc (fp/rep* (non-elt-rf ctx))
+           (elt-rf ctx)
+           (fp/rep* (non-elt-rf ctx))))
 
-(defn well-formed-doc-g 
+(defn well-formed-doc-rf 
   [ctx]
-  (doc-wrapper-g well-formed-content-g ctx))
+  (doc-wrapper-rf well-formed-content-rf ctx))
 
 (defmacro defelt
-  [var constructor & [model-g elt-validator]]
+  [var constructor & [model-rf elt-validator]]
   ;; var - the var to bind
   ;; constructor - a fn[selt content], produces an ast instance
-  ;; model-g a fn[ctx], produces a fnparse rule
+  ;; model-rf a fn[ctx], produces a fnparse rule
   ;; validator - a fn[selt], a boolean function that validates selt
   (cond
    (not (symbol? var)) (throw (IllegalArgumentException. "var must be a symbol"))
@@ -134,18 +134,18 @@
                selt# (gensym "selt")
                eelt# (gensym "eelt")
                content# (gensym "content")
-               ign# ['_ `(fp/opt (ignorable-g ~ctx#))]
-               model# (if (nil? model-g) `fp/emptiness `(~model-g (nested-context ~ctx# ~selt#)))
-               elt-start-g# (if (nil? elt-validator)
-                              `(elt-start-g ~ctx#)
-                              `(fp/validate (elt-start-g ~ctx#) ~elt-validator))
-               elt-end-g# `(elt-end-g ~ctx# (:qname ~selt#))]
+               ign# ['_ `(fp/opt (ignorable-rf ~ctx#))]
+               model# (if (nil? model-rf) `fp/emptiness `(~model-rf (nested-context ~ctx# ~selt#)))
+               elt-start-rf# (if (nil? elt-validator)
+                              `(elt-start-rf ~ctx#)
+                              `(fp/validate (elt-start-rf ~ctx#) ~elt-validator))
+               elt-end-rf# `(elt-end-rf ~ctx# (:qname ~selt#))]
            `(defn ~var 
               [~ctx#]
               (fp/complex [~@(concat ign#
-                                     [selt# `~elt-start-g#]
+                                     [selt# `~elt-start-rf#]
                                      [content# `~model#]
-                                     [eelt# `~elt-end-g#]
+                                     [eelt# `~elt-end-rf#]
                                      ign#)]
                           (let [content-flattened# (flatten-and-filter (list ~content#))]
                             (~constructor ~selt# content-flattened#)))))))
@@ -167,18 +167,18 @@
     (printf "Leftover content at %s (%s:%s): %s\n" uri column line remainder)))
 
 (defn- make-parser 
-  [parser-g]
-  (fn paserfn [evts & [ctx]]
+  [rf]
+  (fn parser [evts & [ctx]]
     (let [initial-ctx (or ctx {})
-          parser (parser-g initial-ctx)]
-      (fp/rule-match parser
+          rule (rf initial-ctx)]
+      (fp/rule-match rule
                      parse-failure
                      parse-incomplete
                      {:remainder evts}))))
 
 (defn parse
-  [parser-g evts & [ctx]]
-  (let [parser (make-parser parser-g)]
+  [rf evts & [ctx]]
+  (let [parser (make-parser rf)]
     (parser evts ctx)))
 
 

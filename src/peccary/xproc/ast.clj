@@ -13,7 +13,7 @@
   [qname]
   (not (nil? (xmlutil/ns-uri qname))))
 
-(defn- xproc-elt-validator-f 
+(defn- create-xproc-elt-validator
   [qname & [attrspec]]
   (fn xproc-elt-v [evt]
     (let [ename (:qname evt)
@@ -23,14 +23,14 @@
           unknown (reduce #(dissoc %1 %2) eattrs (keys attrspec))]
       (and
        ;; the name matches
-       (xmlutil/qn-eq qname ename)
+       (= qname ename)
        ;; all of the unknown attributes are extension attributes
        (empty? (filter (fn [[attr _]]
                          (not (extension-attr-name? attr))) unknown))
        ;; all required specified
        (empty? (reduce #(dissoc %1 %2) required (keys eattrs)))))))
 
-(defn- xproc-ast-constructor-f 
+(defn- create-xproc-ast-constructor
   [type]
   (fn xproc-ast-c [selt content]
     (let [attrs-grouped (group-by (fn [[attr _]]
@@ -43,288 +43,288 @@
        :extension-attrs extension-attrs})))
 
 (defmacro defxprocelt
-  [var {qname :qname attrs :attrs model-g :model type :type}]
+  [var {qname :qname attrs :attrs model-rf :model type :type}]
   (if (nil? qname)
     (throw (IllegalArgumentException. "qname is required"))
     (let [ctype (or type `(keyword (xmlutil/local-name ~qname)))
-          constructor `(xproc-ast-constructor-f ~ctype)
-          elt-validator `(xproc-elt-validator-f ~qname ~attrs)]
-      `(xmlast/defelt ~var ~constructor ~model-g ~elt-validator))))
+          constructor `(create-xproc-ast-constructor ~ctype)
+          elt-validator `(create-xproc-elt-validator ~qname ~attrs)]
+      `(xmlast/defelt ~var ~constructor ~model-rf ~elt-validator))))
 
 ;;; 
 
 
-(defxprocelt documentation-g {:qname qn-e-documentation 
-                              :model #(fp/rep* (xmlast/well-formed-content-g %))})
+(defxprocelt documentation-rf {:qname qn-e-documentation 
+                               :model #(fp/rep* (xmlast/well-formed-content-rf %))})
 
-(defxprocelt pipeinfo-g {:qname qn-e-pipeinfo
-                         :model #(fp/rep* (xmlast/well-formed-content-g %))})
+(defxprocelt pipeinfo-rf {:qname qn-e-pipeinfo
+                          :model #(fp/rep* (xmlast/well-formed-content-rf %))})
 
-(defxprocelt empty-g {:qname qn-e-empty})
+(defxprocelt empty-rf {:qname qn-e-empty})
 
-(defxprocelt pipe-g {:qname qn-e-pipe
-                     :attrs {qn-a-step :required
-                             qn-a-port :required}})
+(defxprocelt pipe-rf {:qname qn-e-pipe
+                      :attrs {qn-a-step :required
+                              qn-a-port :required}})
 
-(defxprocelt document-g {:qname qn-e-document
-                         :attrs {qn-a-href :required}})
+(defxprocelt document-rf {:qname qn-e-document
+                          :attrs {qn-a-href :required}})
 
-(defxprocelt data-g {:qname qn-e-data
-                     :attrs {qn-a-href :required
-                             qn-a-wrapper :optional
-                             qn-a-wrapper-prefix :optional
-                             qn-a-wrapper-namespace :optional
-                             qn-a-content-type :optional}})
+(defxprocelt data-rf {:qname qn-e-data
+                      :attrs {qn-a-href :required
+                              qn-a-wrapper :optional
+                              qn-a-wrapper-prefix :optional
+                              qn-a-wrapper-namespace :optional
+                              qn-a-content-type :optional}})
 
-(defxprocelt inline-g {:qname qn-e-inline
-                       :attrs {qn-a-exclude-inline-prefixes :optional}
-                       :model #(xmlast/well-formed-content-g %)})
+(defxprocelt inline-rf {:qname qn-e-inline
+                        :attrs {qn-a-exclude-inline-prefixes :optional}
+                        :model #(xmlast/well-formed-content-rf %)})
 
-(defn- connection-g 
+(defn- connection-rf 
   [ctx]
-  (fp/alt (empty-g ctx)
-          (document-g ctx)
-          (inline-g ctx)
-          (data-g ctx)
-          (pipe-g ctx)))
+  (fp/alt (empty-rf ctx)
+          (document-rf ctx)
+          (inline-rf ctx)
+          (data-rf ctx)
+          (pipe-rf ctx)))
 
-(defxprocelt namespaces-g {:qname qn-e-namespaces
-                           :attrs {qn-a-binding :optional
-                                   qn-a-element :optional
-                                   qn-a-except-prefixes :optional}})
+(defxprocelt namespaces-rf {:qname qn-e-namespaces
+                            :attrs {qn-a-binding :optional
+                                    qn-a-element :optional
+                                    qn-a-except-prefixes :optional}})
 
-(defxprocelt variable-g {:qname qn-e-variable
-                         :attrs {qn-a-name :required
-                                 qn-a-select :required}
-                         :model #(fp/conc (fp/opt (connection-g %))
-                                          (fp/rep* (namespaces-g %)))})
+(defxprocelt variable-rf {:qname qn-e-variable
+                          :attrs {qn-a-name :required
+                                  qn-a-select :required}
+                          :model #(fp/conc (fp/opt (connection-rf %))
+                                           (fp/rep* (namespaces-rf %)))})
 
-(defxprocelt with-option-g {:qname qn-e-with-option
+(defxprocelt with-option-rf {:qname qn-e-with-option
+                             :attrs {qn-a-name :required
+                                     qn-a-select :required}
+                             :model #(fp/conc (fp/opt (connection-rf %))
+                                              (fp/rep* (namespaces-rf %)))})
+
+(defxprocelt with-param-rf {:qname qn-e-with-param
                             :attrs {qn-a-name :required
-                                    qn-a-select :required}
-                            :model #(fp/conc (fp/opt (connection-g %))
-                                             (fp/rep* (namespaces-g %)))})
+                                    qn-a-select :required
+                                    qn-a-port :optional}
+                            :model #(fp/conc (fp/opt (connection-rf %))
+                                             (fp/rep* (namespaces-rf %)))})
 
-(defxprocelt with-param-g {:qname qn-e-with-param
-                           :attrs {qn-a-name :required
-                                   qn-a-select :required
-                                   qn-a-port :optional}
-                           :model #(fp/conc (fp/opt (connection-g %))
-                                            (fp/rep* (namespaces-g %)))})
+(defxprocelt option-rf {:qname qn-e-option
+                        :attrs {qn-a-name :required
+                                qn-a-required :optional
+                                qn-a-select :required}})
 
-(defxprocelt option-g {:qname qn-e-option
-                       :attrs {qn-a-name :required
-                               qn-a-required :optional
-                               qn-a-select :required}})
-
-(defxprocelt log-g {:qname qn-e-log
-                    :attrs {qn-a-port :required
-                            qn-a-href :optional}})
+(defxprocelt log-rf {:qname qn-e-log
+                     :attrs {qn-a-port :required
+                             qn-a-href :optional}})
 
 ;; TODO atomic steps do not allow connections! - perhaps check while traversing the AST?
-(defxprocelt input-g {:qname qn-e-input
-                      :attrs {qn-a-port :required
-                              qn-a-select :optional}
-                      :model #(fp/opt (fp/alt (empty-g %)
-                                              (fp/rep+ (fp/alt (pipe-g %)
-                                                               (document-g %)
-                                                               (inline-g %)
-                                                               (data-g %)))))})
+(defxprocelt input-rf {:qname qn-e-input
+                       :attrs {qn-a-port :required
+                               qn-a-select :optional}
+                       :model #(fp/opt (fp/alt (empty-rf %)
+                                               (fp/rep+ (fp/alt (pipe-rf %)
+                                                                (document-rf %)
+                                                                (inline-rf %)
+                                                                (data-rf %)))))})
 
-(defxprocelt input-decl-g {:qname qn-e-input
-                           :attrs {qn-a-port :required
-                                   qn-a-sequence :optional
-                                   qn-a-primary :optional
-                                   qn-a-kind :optional
-                                   qn-a-select :optional}
-                           :model #(fp/opt (fp/alt (empty-g %)
-                                                   (fp/alt (document-g %)
-                                                           (inline-g %)
-                                                           (data-g %))))})
-
-(defxprocelt output-decl-g {:qname qn-e-output
+(defxprocelt input-decl-rf {:qname qn-e-input
                             :attrs {qn-a-port :required
                                     qn-a-sequence :optional
-                                    qn-a-primary :optional}
-                            :model #(fp/opt (fp/alt (empty-g %)
-                                                    (fp/alt (pipe-g %)
-                                                            (document-g %)
-                                                            (inline-g %)
-                                                            (data-g %))))})
+                                    qn-a-primary :optional
+                                    qn-a-kind :optional
+                                    qn-a-select :optional}
+                            :model #(fp/opt (fp/alt (empty-rf %)
+                                                    (fp/alt (document-rf %)
+                                                            (inline-rf %)
+                                                            (data-rf %))))})
 
-(defxprocelt iteration-source-g {:qname qn-e-iteration-source
-                                 :attrs {qn-a-select :optional}
-                                 :model #(fp/opt (fp/alt (empty-g %)
-                                                         (fp/alt (pipe-g %)
-                                                                 (document-g %)
-                                                                 (inline-g %)
-                                                                 (data-g %))))})
+(defxprocelt output-decl-rf {:qname qn-e-output
+                             :attrs {qn-a-port :required
+                                     qn-a-sequence :optional
+                                     qn-a-primary :optional}
+                             :model #(fp/opt (fp/alt (empty-rf %)
+                                                     (fp/alt (pipe-rf %)
+                                                             (document-rf %)
+                                                             (inline-rf %)
+                                                             (data-rf %))))})
 
-(declare subpipeline-g)                 ;forward declaration
+(defxprocelt iteration-source-rf {:qname qn-e-iteration-source
+                                  :attrs {qn-a-select :optional}
+                                  :model #(fp/opt (fp/alt (empty-rf %)
+                                                          (fp/alt (pipe-rf %)
+                                                                  (document-rf %)
+                                                                  (inline-rf %)
+                                                                  (data-rf %))))})
 
-(defxprocelt for-each-g {:qname qn-e-for-each
-                         :attrs {qn-a-name :optional}
-                         :model #(fp/conc (fp/opt (iteration-source-g %))
-                                          (fp/rep* (fp/alt (output-decl-g %)
-                                                           (log-g %)))
-                                          (subpipeline-g %))})
+(declare subpipeline-rf)                 ;forward declaration
 
-(defxprocelt viewport-source-g {:qname qn-e-viewport-source
-                                :model #(fp/opt (fp/alt (pipe-g %)
-                                                        (document-g %)
-                                                        (inline-g %)
-                                                        (data-g %)))})
+(defxprocelt for-each-rf {:qname qn-e-for-each
+                          :attrs {qn-a-name :optional}
+                          :model #(fp/conc (fp/opt (iteration-source-rf %))
+                                           (fp/rep* (fp/alt (output-decl-rf %)
+                                                            (log-rf %)))
+                                           (subpipeline-rf %))})
 
-(defxprocelt viewport-g {:qname qn-e-viewport
-                         :attrs {qn-a-name :optional
-                                 qn-a-match :required}
-                         :model #(fp/conc (fp/opt (viewport-source-g %))
-                                          (fp/opt (output-decl-g %))
-                                          (fp/opt (log-g %))
-                                          (subpipeline-g %))})
+(defxprocelt viewport-source-rf {:qname qn-e-viewport-source
+                                 :model #(fp/opt (fp/alt (pipe-rf %)
+                                                         (document-rf %)
+                                                         (inline-rf %)
+                                                         (data-rf %)))})
 
-(defxprocelt xpath-context-g {:qname qn-e-xpath-context
-                              :model #(fp/alt (empty-g %)
-                                              (pipe-g %)
-                                              (document-g %)
-                                              (inline-g %)
-                                              (data-g %))})
+(defxprocelt viewport-rf {:qname qn-e-viewport
+                          :attrs {qn-a-name :optional
+                                  qn-a-match :required}
+                          :model #(fp/conc (fp/opt (viewport-source-rf %))
+                                           (fp/opt (output-decl-rf %))
+                                           (fp/opt (log-rf %))
+                                           (subpipeline-rf %))})
 
-(defxprocelt when-g {:qname qn-e-when
-                     :attrs {qn-a-test :required}
-                     :model #(fp/conc (fp/opt (xpath-context-g %))
-                                      (fp/rep* (fp/alt (output-decl-g %)
-                                                       (log-g %)))
-                                      (subpipeline-g %))})
+(defxprocelt xpath-context-rf {:qname qn-e-xpath-context
+                               :model #(fp/alt (empty-rf %)
+                                               (pipe-rf %)
+                                               (document-rf %)
+                                               (inline-rf %)
+                                               (data-rf %))})
 
-(defxprocelt otherwise-g {:qname qn-e-otherwise
-                          :model #(fp/conc (fp/rep* (fp/alt (output-decl-g %)
-                                                            (log-g %)))
-                                           (subpipeline-g %))})
+(defxprocelt when-rf {:qname qn-e-when
+                      :attrs {qn-a-test :required}
+                      :model #(fp/conc (fp/opt (xpath-context-rf %))
+                                       (fp/rep* (fp/alt (output-decl-rf %)
+                                                        (log-rf %)))
+                                       (subpipeline-rf %))})
 
-(defxprocelt choose-g {:qname qn-e-choose
+(defxprocelt otherwise-rf {:qname qn-e-otherwise
+                           :model #(fp/conc (fp/rep* (fp/alt (output-decl-rf %)
+                                                             (log-rf %)))
+                                            (subpipeline-rf %))})
+
+(defxprocelt choose-rf {:qname qn-e-choose
+                        :attrs {qn-a-name :optional}
+                        :model #(fp/conc (fp/opt (xpath-context-rf %))
+                                         (fp/rep* (variable-rf %))
+                                         (fp/rep* (when-rf %))
+                                         (fp/opt (otherwise-rf %))
+                                         (subpipeline-rf %))})
+
+(defxprocelt group-rf {:qname qn-e-group
                        :attrs {qn-a-name :optional}
-                       :model #(fp/conc (fp/opt (xpath-context-g %))
-                                        (fp/rep* (variable-g %))
-                                        (fp/rep* (when-g %))
-                                        (fp/opt (otherwise-g %))
-                                        (subpipeline-g %))})
+                       :model #(fp/conc (fp/rep* (fp/alt (output-decl-rf %)
+                                                         (log-rf %)))
+                                        (subpipeline-rf %))})
 
-(defxprocelt group-g {:qname qn-e-group
-                      :attrs {qn-a-name :optional}
-                      :model #(fp/conc (fp/rep* (fp/alt (output-decl-g %)
-                                                        (log-g %)))
-                                       (subpipeline-g %))})
+(defxprocelt catch-rf {:qname qn-e-catch
+                       :attrs {qn-a-name :optional}
+                       :model #(fp/conc (fp/rep* (fp/alt (output-decl-rf %)
+                                                         (log-rf %)))
+                                        (subpipeline-rf %))})
 
-(defxprocelt catch-g {:qname qn-e-catch
-                      :attrs {qn-a-name :optional}
-                      :model #(fp/conc (fp/rep* (fp/alt (output-decl-g %)
-                                                        (log-g %)))
-                                       (subpipeline-g %))})
+(defxprocelt try-rf {:qname qn-e-try
+                     :attrs {qn-a-name :optional}
+                     :model #(fp/conc (fp/rep* (variable-rf %))
+                                      (group-rf %)
+                                      (catch-rf %))})
 
-(defxprocelt try-g {:qname qn-e-try
-                    :attrs {qn-a-name :optional}
-                    :model #(fp/conc (fp/rep* (variable-g %))
-                                     (group-g %)
-                                     (catch-g %))})
-
-(xmlast/defelt step-g 
-  (xproc-ast-constructor-f :step)
-  #(fp/rep* (fp/alt (input-g %)
-                    (with-option-g %)
-                    (with-param-g %)
-                    (log-g %)))
+(xmlast/defelt step-rf 
+  (create-xproc-ast-constructor :step)
+  #(fp/rep* (fp/alt (input-rf %)        ;TODO support ignorable inside step?
+                    (with-option-rf %)
+                    (with-param-rf %)
+                    (log-rf %)))
   (fn step-elt-v [evt]
     (not (nil? (xmlutil/ns-uri (:qname evt))))))
 
-(defn- subpipeline-g 
+(defn- subpipeline-rf 
   [ctx]
-  (fp/conc (fp/rep* (variable-g ctx))
-           (fp/rep+ (fp/alt (for-each-g ctx)
-                            (viewport-g ctx)
-                            (choose-g ctx)
-                            (group-g ctx)
-                            (try-g ctx)
-                            (step-g ctx)))))
+  (fp/conc (fp/rep* (variable-rf ctx))
+           (fp/rep+ (fp/alt (for-each-rf ctx)
+                            (viewport-rf ctx)
+                            (choose-rf ctx)
+                            (group-rf ctx)
+                            (try-rf ctx)
+                            (step-rf ctx)))))
 
-(defxprocelt import-g {:qname qn-e-import
-                       :attrs {qn-a-href :required}})
+(defxprocelt import-rf {:qname qn-e-import
+                        :attrs {qn-a-href :required}})
 
-(defxprocelt serialization-g {:qname qn-e-serialization
-                              :attrs {qn-a-port :required
-                                      qn-a-byte-order-mark :optional
-                                      qn-a-cdata-section-elements :optional
-                                      qn-a-doctype-public :optional
-                                      qn-a-doctype-system :optional
-                                      qn-a-encoding :optional
-                                      qn-a-escape-uri-attributes :optional
-                                      qn-a-include-content-type :optional
-                                      qn-a-indent :optional
-                                      qn-a-media-type :optional
-                                      qn-a-method :optional
-                                      qn-a-normalization-form :optional
-                                      qn-a-omit-xml-declaration :optional
-                                      qn-a-standalone :optional
-                                      qn-a-undeclare-prefixes :optional
-                                      qn-a-version :optional}})
+(defxprocelt serialization-rf {:qname qn-e-serialization
+                               :attrs {qn-a-port :required
+                                       qn-a-byte-order-mark :optional
+                                       qn-a-cdata-section-elements :optional
+                                       qn-a-doctype-public :optional
+                                       qn-a-doctype-system :optional
+                                       qn-a-encoding :optional
+                                       qn-a-escape-uri-attributes :optional
+                                       qn-a-include-content-type :optional
+                                       qn-a-indent :optional
+                                       qn-a-media-type :optional
+                                       qn-a-method :optional
+                                       qn-a-normalization-form :optional
+                                       qn-a-omit-xml-declaration :optional
+                                       qn-a-standalone :optional
+                                       qn-a-undeclare-prefixes :optional
+                                       qn-a-version :optional}})
 
-(declare declare-step-g)                ;forward declaration
-(defxprocelt pipeline-g {:qname qn-e-pipeline
-                         :attrs {qn-a-name :optional
-                                 qn-a-type :optional
-                                 qn-a-psvi-required :optional
+(declare declare-step-rf)                ;forward declaration
+(defxprocelt pipeline-rf {:qname qn-e-pipeline
+                          :attrs {qn-a-name :optional
+                                  qn-a-type :optional
+                                  qn-a-psvi-required :optional
+                                  qn-a-xpath-version :optional
+                                  qn-a-exclude-inline-prefixes :optional
+                                  qn-a-version :optional}
+                          :model #(fp/conc (fp/rep* (fp/alt (input-decl-rf %)
+                                                            (output-decl-rf %)
+                                                            (option-rf %)
+                                                            (log-rf %)
+                                                            (serialization-rf %)))
+                                           (fp/rep* (fp/alt (declare-step-rf %)
+                                                            (pipeline-rf %)
+                                                            (import-rf %)))
+                                           (subpipeline-rf %))})
+
+(defxprocelt declare-step-rf {:qname qn-e-declare-step
+                              :attrs {qn-a-name :optional
+                                      qn-a-type :optional
+                                      qn-a-psvi-required :optional
+                                      qn-a-xpath-version :optional
+                                      qn-a-exclude-inline-prefixes :optional
+                                      qn-a-version :optional}
+                              :model #(fp/conc (fp/rep* (fp/alt (input-decl-rf %)
+                                                                (output-decl-rf %)
+                                                                (option-rf %)
+                                                                (log-rf %)
+                                                                (serialization-rf %)))
+                                               (fp/opt (fp/conc (fp/rep* (fp/alt (declare-step-rf %)
+                                                                                 (pipeline-rf %)
+                                                                                 (import-rf %)))
+                                                                (subpipeline-rf %))))})
+
+(defxprocelt library-rf {:qname qn-e-library
+                         :attrs {qn-a-psvi-required :optional
                                  qn-a-xpath-version :optional
                                  qn-a-exclude-inline-prefixes :optional
                                  qn-a-version :optional}
-                         :model #(fp/conc (fp/rep* (fp/alt (input-decl-g %)
-                                                           (output-decl-g %)
-                                                           (option-g %)
-                                                           (log-g %)
-                                                           (serialization-g %)))
-                                          (fp/rep* (fp/alt (declare-step-g %)
-                                                           (pipeline-g %)
-                                                           (import-g %)))
-                                          (subpipeline-g %))})
-
-(defxprocelt declare-step-g {:qname qn-e-declare-step
-                             :attrs {qn-a-name :optional
-                                     qn-a-type :optional
-                                     qn-a-psvi-required :optional
-                                     qn-a-xpath-version :optional
-                                     qn-a-exclude-inline-prefixes :optional
-                                     qn-a-version :optional}
-                             :model #(fp/conc (fp/rep* (fp/alt (input-decl-g %)
-                                                               (output-decl-g %)
-                                                               (option-g %)
-                                                               (log-g %)
-                                                               (serialization-g %)))
-                                              (fp/opt (fp/conc (fp/rep* (fp/alt (declare-step-g %)
-                                                                                (pipeline-g %)
-                                                                                (import-g %)))
-                                                               (subpipeline-g %))))})
-
-(defxprocelt library-g {:qname qn-e-library
-                        :attrs {qn-a-psvi-required :optional
-                                qn-a-xpath-version :optional
-                                qn-a-exclude-inline-prefixes :optional
-                                qn-a-version :optional}
-                        :model #(fp/rep* (fp/alt (import-g %)
-                                                 (declare-step-g %)
-                                                 (pipeline-g %)))})
+                         :model #(fp/rep* (fp/alt (import-rf %)
+                                                  (declare-step-rf %)
+                                                  (pipeline-rf %)))})
 
 ;;; 
 
-(defn import-target-g 
+(defn import-target-rf 
   [ctx]
-  (xmlast/opt-doc-g #(fp/alt (pipeline-g %)
-                             (declare-step-g %)
-                             (library-g %))
-                    ctx))
+  (xmlast/opt-doc-rf #(fp/alt (pipeline-rf %)
+                              (declare-step-rf %)
+                              (library-rf %))
+                     ctx))
 
-(defn main-pipeline-g 
+(defn main-pipeline-rf 
   [ctx]
-  (xmlast/opt-doc-g #(fp/alt (pipeline-g %)
-                             (declare-step-g %))
-                    ctx))
+  (xmlast/opt-doc-rf #(fp/alt (pipeline-rf %)
+                              (declare-step-rf %))
+                     ctx))
 
 

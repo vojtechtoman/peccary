@@ -2,7 +2,7 @@
   (:gen-class)
   (:import [javax.xml XMLConstants]))
 
-(defrecord QName [local-name ns-uri prefix])
+(defrecord QName [local-name ns-uri])
 
 ;;; TODO: At the moment the prefix is significant in the = comparison
 ;;; which is not correct. We will need a custom type that has map-like
@@ -13,7 +13,7 @@
   [local-name & [uri prefix]]
   (let [use-uri (if (empty? uri) nil uri)
         use-prefix (if (empty? prefix) nil prefix)]
-    (QName. local-name use-uri use-prefix)))
+    (with-meta (QName. local-name use-uri) {:prefix use-prefix})))
 
 (defn local-name
   [qname]
@@ -25,12 +25,7 @@
 
 (defn prefix
   [qname]
-  (:prefix qname))
-
-(defn qn-eq
-  [qn1 qn2]
-  (and (= (local-name qn1) (local-name qn2))
-       (= (ns-uri qn1) (ns-uri qn2))))
+  (-> qname meta :prefix))
 
 ;;; some useful constants
 (def ^:const ns-xml XMLConstants/XML_NS_URI)

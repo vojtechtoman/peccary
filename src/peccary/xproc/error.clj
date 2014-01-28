@@ -3,11 +3,18 @@
   (:require [peccary.xproc.vocabulary :refer :all]))
 
 
+;; (try (...)
+;;    (catch clojure.lang.ExceptionInfo e ...))
+
+
 (defmacro deferror
   [code message]
   (let [var (symbol (str "err-" code))
-        qname (xproc-error-qn code)]
-    `(def ~var {:qname (xproc-error-qn ~code) :message ~message})))
+        qname (xproc-error-qn code)
+        cause# (gensym "cause")
+        args# (gensym "args")]
+    `(defn ~var [& [~cause# ~args#]]
+       (throw (ex-info (str ~code ": " ~message) {:type ~qname :message ~message :args ~args#} ~cause#)))))
 
 ;; static errors
 
