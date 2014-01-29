@@ -150,21 +150,28 @@
                           (let [content-flattened# (flatten-and-filter (list ~content#))]
                             (~constructor ~selt# content-flattened#)))))))
 
-(defn- parse-failure [state]
+(defn- location-str
+  [evt]
+  (let [loc (:location evt)
+        res (or (:resource loc) "<unknown>")
+        column (or (:column loc) "?")
+        line (or (:line loc) "?")
+        offset (or (:offset loc) "?")]
+    (str res " (column:" column " line:" line " offset:" offset ")")))
+
+(defn- parse-failure
+  [state]
   (let [remainder (:remainder state)
         next (first remainder)
-        uri (or (:uri next) "<unknown>")
-        column (or (:column next) "?")
-        line (or (:line next) "?")]
-    (printf "Parse failure at %s (%s:%s): %s\n" uri column line next)))
+        loc (location-str next)]
+    (printf "Parse failure at %s: %s\n" loc next)))
 
-(defn- parse-incomplete [orig-state new-state]
+(defn- parse-incomplete
+  [orig-state new-state]
   (let [remainder (:remainder new-state)
         next (first remainder)
-        uri (or (:uri next) "<unknown>")
-        column (or (:column next) "?")
-        line (or (:line next) "?")]
-    (printf "Leftover content at %s (%s:%s): %s\n" uri column line remainder)))
+        loc (location-str next)]
+    (printf "Leftover content at %s: %s\n" loc remainder)))
 
 (defn- make-parser 
   [rf]
@@ -180,5 +187,4 @@
   [rf evts & [ctx]]
   (let [parser (make-parser rf)]
     (parser evts ctx)))
-
 

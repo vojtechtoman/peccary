@@ -5,52 +5,80 @@
                              XMLStreamReader
                              XMLStreamConstants)))
 
+(defn- location
+  [^XMLStreamReader sreader]
+  (let [location (.getLocation sreader)
+        offset (.getCharacterOffset location)
+        column (.getColumnNumber location)
+        line (.getLineNumber location)
+        resource (.getSystemId location)]  ;TODO
+    {:offset offset :column column :line line :resource resource}))
+
+(defn- evt
+  [^XMLStreamReader sreader m]
+  (let [loc (location sreader)
+        base {:location loc}]
+    (merge base m)))
+
+;;; 
 
 (defn- start-document
-  []
-  {:type :start-document})
+  [^XMLStreamReader sreader]
+  (evt sreader {:type :start-document}))
 
 (defn- end-document
-  []
-  {:type :end-document})
-
-(defn- start-element
-  [local-name ns-uri prefix attrs]
-  (let [qname (xmlutil/qn local-name ns-uri prefix)]
-    {:type :start-element :qname qname :attrs attrs}))
-
-(defn- end-element
-  [local-name ns-uri prefix]
-  (let [qname (xmlutil/qn local-name ns-uri prefix)]
-    {:type :end-element :qname qname}))
-
-(defn- text
-  [data]
-  {:type :text :data data})
-
-(defn- comm
-  [data]
-  {:type :comment :data data})
-
-(defn- cdata
-  [data]
-  {:type :cdata :data data})
-
-(defn- pi
-  [target data]
-  {:type :pi :target target :data data})
+  [^XMLStreamReader sreader]
+  (evt sreader {:type :end-document}))
 
 ;;; TODO include also namespace declarations!!!
 (defn- attr-hash
   [^XMLStreamReader sreader]
   (into {}
-        (for [i (range (.getAttributeCount sreader))]
-          (let [local-name (.getAttributeLocalName sreader i)
-                ns-uri (.getAttributeNamespace sreader i)
-                prefix (.getAttributePrefix sreader i)
-                qname (xmlutil/qn local-name ns-uri prefix)
-                value (.getAttributeValue sreader i)]
-            [qname value]))))
+        (for [i (range (.getAttributeCount sreader))
+              :let [local-name (.getAttributeLocalName sreader i)
+                    ns-uri (.getAttributeNamespace sreader i)
+                    prefix (.getAttributePrefix sreader i)
+                    qname (xmlutil/qn local-name ns-uri prefix)
+                    value (.getAttributeValue sreader i)]]
+          [qname value])))
+
+(defn- start-element
+  [^XMLStreamReader sreader]
+  (let [local-name (.getLocalName sreader)
+        ns-uri (.getNamespaceURI sreader)
+        prefix (.getPrefix sreader)
+        qname (xmlutil/qn local-name ns-uri prefix)
+        attrs (attr-hash sreader)]
+    (evt sreader {:type :start-element :qname qname :attrs attrs})))
+
+(defn- end-element
+  [^XMLStreamReader sreader]
+  (let [local-name (.getLocalName sreader)
+        ns-uri (.getNamespaceURI sreader)
+        prefix (.getPrefix sreader)
+        qname (xmlutil/qn local-name ns-uri prefix)]
+    (evt sreader {:type :end-element :qname qname})))
+
+(defn- text
+  [^XMLStreamReader sreader]
+  (let [data (.getText sreader)]
+    (evt sreader {:type :text :data data})))
+
+(defn- comm
+  [^XMLStreamReader sreader]
+  (let [data (.getText sreader)]
+   (evt sreader {:type :comment :data data})))
+
+(defn- cdata
+  [^XMLStreamReader sreader]
+  (let [data (.getText sreader)]
+    (evt sreader {:type :cdata :data data})))
+
+(defn- pi
+  [^XMLStreamReader sreader]
+  (let [target (.getPITarget sreader)
+        data (.getPIData sreader)]
+    (evt sreader {:type :pi :target target :data data})))
 
 ; Note, sreader is mutable and mutated here in pull-seq, but it's
 ; protected by a lazy-seq so it's thread-safe.
@@ -62,32 +90,25 @@ be triggered by the JDK StAX parser, but is by others. Leaving in to be more com
    (loop []
      (condp == (.next sreader)
        XMLStreamConstants/START_ELEMENT
-       (cons (let [local-name (.getLocalName sreader)
-                   ns-uri (.getNamespaceURI sreader)
-                   prefix (.getPrefix sreader)
-                   attrs (attr-hash sreader)]
-               (start-element local-name ns-uri prefix attrs))
+       (cons (start-element sreader)
              (pull-seq-doc sreader))
        XMLStreamConstants/END_ELEMENT
-       (cons (let [local-name (.getLocalName sreader)
-                   ns-uri (.getNamespaceURI sreader)
-                   prefix (.getPrefix sreader)]
-               (end-element local-name ns-uri prefix))
+       (cons (end-element sreader)
              (pull-seq-doc sreader))
        XMLStreamConstants/CHARACTERS
-       (cons (text (.getText sreader))
+       (cons (text sreader)
              (pull-seq-doc sreader))
        XMLStreamConstants/COMMENT
-       (cons (comm (.getText sreader))
+       (cons (comm sreader)
              (pull-seq-doc sreader))
        XMLStreamConstants/CDATA
-       (cons (cdata (.getText sreader))
+       (cons (cdata sreader)
              (pull-seq-doc sreader))
        XMLStreamConstants/PROCESSING_INSTRUCTION
-       (cons (pi (.getPITarget sreader) (.getPIData sreader))
+       (cons (pi sreader)
              (pull-seq-doc sreader))
        XMLStreamConstants/END_DOCUMENT
-       (list (end-document))
+       (list (end-document sreader))
        (recur)
        ))))
 
@@ -96,7 +117,7 @@ be triggered by the JDK StAX parser, but is by others. Leaving in to be more com
 be triggered by the JDK StAX parser, but is by others. Leaving in to be more complete."
   [^XMLStreamReader sreader]
   (cons
-     (start-document)
+     (start-document sreader)
      (pull-seq-doc sreader)))
 
 (def ^{:private true} xml-input-factory-props

@@ -2,8 +2,7 @@
   (:require [clojure.test :refer :all]
             [peccary.xml.parse :as xmlparse]
             [peccary.xml.ast :as xmlast]
-            [peccary.xproc.ast :as xprocast]
-))
+            [peccary.xproc.ast :as xprocast]))
 
 (def identity-file "test/data/identity.xpl")
 (def identity-str (slurp identity-file))
@@ -25,9 +24,19 @@
   [s]
   (xmlparse/parse-str s))
 
+;;; removes the location info from the AST tree to simplify AST comparisons
+(defn- locationless
+  [ast]
+  (xprocast/ast-edit ast
+                      (fn [n]
+                        (:location n))
+                      (fn [_ n]
+                        (dissoc n :location))))
+
 (defn make-ast
   [evts]
-  (xmlast/parse xprocast/main-pipeline-rf evts))
+  (let [ast (xmlast/parse xprocast/main-pipeline-rf evts)]
+    (locationless ast)))
 
 (defn- file-ast
   [file]
@@ -63,3 +72,8 @@
     (are [str] (= (str-ast str) identity-ast)
          identity-str
          (with-ignorable-whitespace identity-str))))
+
+;; (deftest process-ast
+;;   (testing 
+;;     (is (= (-> identity-str str-ast xprocast/process-ast) identity-ast)
+;;          )))

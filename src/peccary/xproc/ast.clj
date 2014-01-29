@@ -1,13 +1,16 @@
 (ns peccary.xproc.ast
   (:gen-class)
-  (:require [peccary.xml.util :as xmlutil]
+  (:require [clojure.zip :as zip]
+            [peccary.util :as util]
+            [peccary.xml.util :as xmlutil]
             [peccary.xml.ast :as xmlast]
+            [peccary.xproc.error :refer :all]
             [peccary.xproc.vocabulary :refer :all]
             [name.choi.joshua.fnparse :as fp]))
 
 
+;;; The XProc grammar
 ;;; TODO (p:)use-when, p:documentation, and p:pipeinfo
-
 
 (defn- extension-attr-name? 
   [qname]
@@ -25,10 +28,12 @@
        ;; the name matches
        (= qname ename)
        ;; all of the unknown attributes are extension attributes
-       (empty? (filter (fn [[attr _]]
-                         (not (extension-attr-name? attr))) unknown))
+       (or (empty? (filter (fn [[attr _]]
+                             (not (extension-attr-name? attr))) unknown))
+           (err-XS0008))
        ;; all required specified
-       (empty? (reduce #(dissoc %1 %2) required (keys eattrs)))))))
+       (or (empty? (reduce #(dissoc %1 %2) required (keys eattrs)))
+           (err-XS0018))))))
 
 (defn- create-xproc-ast-constructor
   [type]
@@ -36,11 +41,13 @@
     (let [attrs-grouped (group-by (fn [[attr _]]
                                     (extension-attr-name? attr)) (:attrs selt))
           regular-attrs (into {} (get attrs-grouped false))
-          extension-attrs (into {} (get attrs-grouped true))]
+          extension-attrs (into {} (get attrs-grouped true))
+          loc (:location selt)]
       {:type type
        :content content
        :attrs regular-attrs
-       :extension-attrs extension-attrs})))
+       :extension-attrs extension-attrs
+       :location loc})))
 
 (defmacro defxprocelt
   [var {qname :qname attrs :attrs model-rf :model type :type}]
@@ -52,7 +59,6 @@
       `(xmlast/defelt ~var ~constructor ~model-rf ~elt-validator))))
 
 ;;; 
-
 
 (defxprocelt documentation-rf {:qname qn-e-documentation 
                                :model #(fp/rep* (xmlast/well-formed-content-rf %))})
@@ -121,7 +127,6 @@
                      :attrs {qn-a-port :required
                              qn-a-href :optional}})
 
-;; TODO atomic steps do not allow connections! - perhaps check while traversing the AST?
 (defxprocelt input-rf {:qname qn-e-input
                        :attrs {qn-a-port :required
                                qn-a-select :optional}
@@ -131,6 +136,7 @@
                                                                 (inline-rf %)
                                                                 (data-rf %)))))})
 
+;; TODO atomic steps do not allow connections! (XS0042)- perhaps check while traversing the AST?
 (defxprocelt input-decl-rf {:qname qn-e-input
                             :attrs {qn-a-port :required
                                     qn-a-sequence :optional
@@ -142,6 +148,7 @@
                                                             (inline-rf %)
                                                             (data-rf %))))})
 
+;; TODO atomic steps do not allow connections! (XS0029)- perhaps check while traversing the AST?
 (defxprocelt output-decl-rf {:qname qn-e-output
                              :attrs {qn-a-port :required
                                      qn-a-sequence :optional
@@ -275,7 +282,7 @@
                                   qn-a-psvi-required :optional
                                   qn-a-xpath-version :optional
                                   qn-a-exclude-inline-prefixes :optional
-                                  qn-a-version :optional}
+                                  qn-a-version :optional} ;required for top-level pipelines (XS0062)
                           :model #(fp/conc (fp/rep* (fp/alt (input-decl-rf %)
                                                             (output-decl-rf %)
                                                             (option-rf %)
@@ -292,7 +299,7 @@
                                       qn-a-psvi-required :optional
                                       qn-a-xpath-version :optional
                                       qn-a-exclude-inline-prefixes :optional
-                                      qn-a-version :optional}
+                                      qn-a-version :optional} ;required for top-level pipelines (XS0062)
                               :model #(fp/conc (fp/rep* (fp/alt (input-decl-rf %)
                                                                 (output-decl-rf %)
                                                                 (option-rf %)
@@ -307,7 +314,7 @@
                          :attrs {qn-a-psvi-required :optional
                                  qn-a-xpath-version :optional
                                  qn-a-exclude-inline-prefixes :optional
-                                 qn-a-version :optional}
+                                 qn-a-version :optional}  ;required for top-level libraries (XS0062)
                          :model #(fp/rep* (fp/alt (import-rf %)
                                                   (declare-step-rf %)
                                                   (pipeline-rf %)))})
@@ -328,3 +335,40 @@
                      ctx))
 
 
+;;; AST processing
+
+;;; ast - AST node to process
+;;; matcher - fn [node] that decides if node needs to be updated
+;;; editor - fn [matcher-result node] that produces a modified node
+(defn ast-edit [ast matcher editor]
+  (let [z (zip/zipper map? :content (fn [n c] (assoc n :content c)) ast)]
+    (util/zipper-edit z matcher editor)))
+
+(defn- type-dispatch
+  [node]
+  (:type node))
+
+;;; 
+
+(defmulti insert-input-ports (fn [_ node] (type-dispatch node)))
+
+(defmethod insert-input-ports :pipeline [mr node]
+  (prn "pipeline!")
+  (let [content (:content node)
+        source {:type :input :attrs {qn-a-port "source" qn-a-kind "document" qn-a-sequence "true" qn-a-primary "true"}}
+        result {:type :output :attrs {qn-a-port "result" qn-a-sequence "true" qn-a-primary "true"}}
+        parameters {:type :input :attrs {qn-a-port "parameters" qn-a-kind "parameter" qn-a-sequence "true" qn-a-primary "true"}}
+        new-content (vec (concat [source result parameters] content))]
+    (assoc node :content new-content)))
+
+(defmethod insert-input-ports :default [_ node]
+  node)
+
+;;; 
+
+(defn process-ast
+  [ast]
+  (let [matcher type-dispatch
+        phases [insert-input-ports]]
+    (reduce (fn [ast phase]
+              (ast-edit ast matcher phase)) ast phases)))
