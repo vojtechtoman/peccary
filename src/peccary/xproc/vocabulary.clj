@@ -93,3 +93,48 @@
 (def ^:const qn-a-wrapper-namespace (xmlutil/qn "wrapper-namespace"))
 (def ^:const qn-a-wrapper-prefix (xmlutil/qn "wrapper-prefix"))
 (def ^:const qn-a-xpath-version (xmlutil/qn "xpath-version"))
+
+;;; 
+
+(def ^:const port-source "source")
+(def ^:const port-result "result")
+(def ^:const port-parameters "parameters")
+
+(def ^:const port-kind-document "document")
+(def ^:const port-kind-parameter "parameter")
+
+;;; 
+
+(defn as-boolean                        ;TODO fail if not boolean?
+  [val]
+  (let [b ({"true" true true true "1" true 1 true 
+            "false" false false false "0" false 0 false} val)]
+    b))
+
+(defn as-string
+  [val]
+  val)
+
+(defn as-ncname                         ;TODO
+  [val]
+  val)
+
+(defn as-ncnames                        ;TODO
+  [val]
+  val)
+
+(defn as-nmtoken                        ;TODO
+  [val]
+  val)
+
+(defn as-nmtokens                       ;TODO
+  [val]
+  val)
+
+(defn as-qname                          ;TODO
+  [val]
+  val)
+
+(defn as-uri                            ;TODO
+  [val]
+  val)

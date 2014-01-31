@@ -348,16 +348,35 @@
   [node]
   (:type node))
 
+;;; miscellaneous helper methods
+
+(defn process-content
+  [node f]
+  (when-let [content (:content node)]
+    (f content)))
+
+(defn filter-content
+  [node f]
+  (process-content node (partial filter f)))
+
+(defn- create-port
+  [name type & [{kind qn-a-kind sequence qn-a-sequence primary qn-a-primary} opts]]
+  (let [attrs (reduce (fn [m [k v]]
+                        (if (nil? v) m (assoc m k v)))
+                      {qn-a-port name qn-a-kind kind qn-a-sequence sequence qn-a-primary primary})]
+    {:type type :attrs attrs}))
+
 ;;; 
+
 
 (defmulti insert-input-ports (fn [_ node] (type-dispatch node)))
 
 (defmethod insert-input-ports :pipeline [mr node]
   (prn "pipeline!")
   (let [content (:content node)
-        source {:type :input :attrs {qn-a-port "source" qn-a-kind "document" qn-a-sequence "true" qn-a-primary "true"}}
-        result {:type :output :attrs {qn-a-port "result" qn-a-sequence "true" qn-a-primary "true"}}
-        parameters {:type :input :attrs {qn-a-port "parameters" qn-a-kind "parameter" qn-a-sequence "true" qn-a-primary "true"}}
+        source (create-port port-source :input {qn-a-kind "document" qn-a-sequence "true" qn-a-primary "true"})
+        parameters (create-port port-parameters :input {qn-a-kind "parameter" qn-a-sequence "true" qn-a-primary "true"})        result (create-port port-result :output {qn-a-sequence "true" qn-a-primary "true"})
+                                                         
         new-content (vec (concat [source result parameters] content))]
     (assoc node :content new-content)))
 
