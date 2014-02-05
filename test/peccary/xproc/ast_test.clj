@@ -2,7 +2,8 @@
   (:require [clojure.test :refer :all]
             [peccary.xml.parse :as xmlparse]
             [peccary.xml.ast :as xmlast]
-            [peccary.xproc.ast :as xprocast]))
+            [peccary.xproc.ast :as xprocast]
+            [peccary.xproc.grammar :as xprocg]))
 
 (def identity-file "test/data/identity.xpl")
 (def identity-str (slurp identity-file))
@@ -35,7 +36,7 @@
 
 (defn make-ast
   [evts]
-  (let [ast (xmlast/parse xprocast/main-pipeline-rf evts)]
+  (let [ast (xmlast/parse xprocg/main-pipeline-rf evts)]
     (locationless ast)))
 
 (defn- file-ast
