@@ -26,7 +26,7 @@
   (xmlparse/parse-str s))
 
 ;;; removes the location info from the AST tree to simplify AST comparisons
-(defn- locationless
+(defn- strip-location-info
   [ast]
   (xprocast/ast-edit ast
                       (fn [n]
@@ -36,8 +36,11 @@
 
 (defn make-ast
   [evts]
-  (let [ast (xmlast/parse xprocg/main-pipeline-rf evts)]
-    (locationless ast)))
+  (xmlast/parse xprocg/main-pipeline-rf evts))
+
+(defn- process-ast
+  [ast]
+  (xprocast/process-ast ast))
 
 (defn- file-ast
   [file]
@@ -54,6 +57,10 @@
    (clojure.string/replace "/>" "  /> <?a b?> 
 <!-- comment --> <!-- comment -->  ")))
 
+(defn- ast-eq
+  [ast1 ast2]
+  (= (strip-location-info ast1) (strip-location-info ast2)))
+
 ;;;
 
 (deftest parse-error
@@ -62,19 +69,23 @@
   (testing "Parsing of invalid XProc source" ;TODO introduce a real error
     (is (nil? (str-ast "<p:pipeline xmlns:p='http://www.w3.org/ns/xproc' version='1.0'/>")))))
 
-(deftest file-and-str-ast
-  (testing "The results are the same if we parse a file or a string"
-    (are [ast] (= ast identity-ast)
-         (file-ast identity-file)
-         (str-ast identity-str))))
+(deftest basic-ast-construction
+  (deftest file-and-str-ast-identical
+    (testing "The results are the same if we parse a file or a string"
+      (are [ast] (ast-eq ast identity-ast)
+           (file-ast identity-file)
+           (str-ast identity-str))))
+  
+  (deftest ignorable-content-gets-ignored
+    (testing "Ignorable really does get ignored"
+      (are [str] (ast-eq (str-ast str) identity-ast)
+           identity-str
+           (with-ignorable-whitespace identity-str))))) 
 
-(deftest ignorable-content
-  (testing "Ignorable really does get ignored"
-    (are [str] (= (str-ast str) identity-ast)
-         identity-str
-         (with-ignorable-whitespace identity-str))))
+;;; 
 
-;; (deftest process-ast
-;;   (testing 
-;;     (is (= (-> identity-str str-ast xprocast/process-ast) identity-ast)
-;;          )))
+(deftest ast-manipulations
+  (deftest noop
+    (testing "No changes needed"
+        (is (ast-eq (process-ast identity-ast) identity-ast))))
+)
