@@ -234,8 +234,12 @@
                                       (group-rf %)
                                       (catch-rf %))})
 
-(xmlast/defelt step-rf 
-  (create-xproc-ast-constructor :step)
+(xmlast/defelt step-rf
+  (fn xproc-step-ast-c [selt content]
+    (let [qname (:qname selt)
+          c (create-xproc-ast-constructor :step)
+          m (c selt content)]
+      (-> m (assoc :step-type qname))))
   #(fp/rep* (fp/alt (input-rf %)        ;TODO support ignorable inside step?
                     (with-option-rf %)
                     (with-param-rf %)

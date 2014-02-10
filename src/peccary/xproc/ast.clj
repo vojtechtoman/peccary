@@ -27,25 +27,46 @@
 (def node-hierarchy
   (-> (make-hierarchy)
       (derive ::pipeline ::declare-step)
+
       (derive ::declare-step ::step-declaration)
+
       (derive ::declare-step ::contains-imports)
-      (derive ::declare-step ::step-source)
       (derive ::library ::contains-imports)
-      (derive ::library ::step-source)))
+
+      (derive ::declare-step ::step-source)
+      (derive ::library ::step-source)
+
+      (derive ::atomic-step ::step)
+      (derive ::compound-step ::step)
+      (derive ::declare-step ::compound-step)
+))
 
 (defn- node-hierarchy-type
   [node]
   (let [type (:type node)]
-    ({:pipeline ::pipeline :declare-step ::declare-step :library ::library} type)))
+    ({:pipeline ::pipeline :declare-step ::declare-step :library ::library :step ::atomic-step} type)))
 
 
 ;;; miscellaneous helper methods
 
+(defn- make-ast-zipper
+  [ast]
+  (let []
+    (zip/zipper map? :content (fn [n c] (assoc n :content c)) ast)))
+
+(defn- h-matcher
+  [& [type]]
+  (if type
+    (fn [node]
+;      (prn 555555555 node (node-hierarchy-type node) (isa? node-hierarchy (node-hierarchy-type node) type))
+      (isa? node-hierarchy (node-hierarchy-type node) type))
+    nil))
+
 ;;; matcher - fn [node] that decides if node needs to be updated
 ;;; editor - fn [matcher-result node] that produces a modified node
-(defn ast-edit [ast matcher editor]
-  (let [z (zip/zipper map? :content (fn [n c] (assoc n :content c)) ast)]
-    (util/zipper-edit z matcher editor)))
+(defn ast-edit [ast editor & [matcher]]
+  (let [z (make-ast-zipper ast)]
+    (util/zipper-edit z editor matcher)))
 
 (defn- type-filter
   "Returns a fn that takes a node and returns true if the type of node is equal to type"
@@ -67,40 +88,29 @@
 ;;; 
 
 ;;; AST processing phase: filtering based on use-when expressions
-(defn- process-use-when 
-  [[mr node]] ;TODO
+(defn- use-when-editor
+  [[use-when node]]
   node)
+
+(defn- process-use-when
+  [ast]
+  (ast-edit ast use-when-editor :use-when))
 
 ;;; 
 
-;;; AST processing phase: insertion of implicit input/output ports
-(defmulti insert-implicit-ports (fn [_ node] (:type node)))
-
-(defmethod insert-implicit-ports :pipeline [mr node]
-  (let [content (:content node)
-        source (create-port port-source :input {qn-a-kind "document" qn-a-sequence "true" qn-a-primary "true"})
-        parameters (create-port port-parameters :input {qn-a-kind "parameter" qn-a-sequence "true" qn-a-primary "true"})        result (create-port port-result :output {qn-a-sequence "true" qn-a-primary "true"})
-                                                         
-        new-content (vec (concat [source result parameters] content))]
-    (assoc node :content new-content)))
-
-(defmethod insert-implicit-ports :default [_ node]
-  node)
-
-;;; 
-
-;;; AST processing phase: manufacturing of connections between unconnected default readable ports
-(defmulti insert-default-connections (fn [_ node] (:type node)))
-(defmethod insert-default-connections :default [_ node]
-  node)
+;; ;;; AST processing phase: manufacturing of connections between unconnected default readable ports
+;; (defmulti insert-default-connections (fn [_ node] (:type node)))
+;; (defmethod insert-default-connections :default [_ node]
+;;   node)
 
 ;;; 
 
 ;;; AST processing phase: resolution of imports
-(defmulti resolve-imports (fn [_ node] (node-hierarchy-type node))) :hierarchy node-hierarchy
 
 (declare parse-import-target)
-(defmethod resolve-imports ::contains-imports [mr node]
+(defn- imports-editor
+  [_ node]
+;  (prn 123123 node) 
   (let [content (:content node)
         imports (filter (type-filter :import) content)
         sans-imports (remove (type-filter :import) content)
@@ -110,10 +120,56 @@
                           (merge steps imported-steps))) {} imports)] ;TODO duplicates etc.
     (assoc node :content sans-imports :in-scope-types steps)))
 
-(defmethod resolve-imports :default [mr node]
-  node)
+(defn- process-imports
+  [ast]
+  (let [z (make-ast-zipper ast)]
+    (util/zipper-edit z imports-editor (h-matcher ::contains-imports))))
+
+;;; AST processing phase: discovering step declarations
+
+(defn- in-scope-step-types
+  [loc]
+  (loop [parent (zip/up loc)
+         types {}]
+    (if parent
+      (let [node (zip/node parent)
+            ntypes (:in-scope-types node)
+            merged (merge types ntypes)]
+        (recur (zip/up parent) merged))
+      types)))
+
+(defn- step-types-editor
+  [_ loc]
+  (let [node (zip/node loc)
+        type (:step-type node)
+        in-scope-types (in-scope-step-types loc)]
+    (if-let [step (in-scope-types type)]
+      node                              ;TODO
+      (err-XS0044))))
+
+(defn- resolve-step-types
+  [ast]
+  (let [z (make-ast-zipper ast)]
+    (util/zipper-raw-edit z step-types-editor (h-matcher ::atomic-step))))
+
+
+
+;; ;;; AST processing phase: insertion of implicit input/output ports
+;; (defmulti insert-implicit-ports (fn [_ node] (:type node)))
+
+;; (defmethod insert-implicit-ports :pipeline [mr node]
+;;   (let [content (:content node)
+;;         source (create-port port-source :input {qn-a-kind "document" qn-a-sequence "true" qn-a-primary "true"})
+;;         parameters (create-port port-parameters :input {qn-a-kind "parameter" qn-a-sequence "true" qn-a-primary "true"})        result (create-port port-result :output {qn-a-sequence "true" qn-a-primary "true"})
+                                                         
+;;         new-content (vec (concat [source result parameters] content))]
+;;     (assoc node :content new-content)))
+
+;; (defmethod insert-implicit-ports :default [_ node]
+;;   node)
 
 ;;; 
+
 
 (defn- make-dependency-graph
   [step]
@@ -123,13 +179,12 @@
 
 (defn process-ast
   [ast]
-  (let [matcher :type
-        phases [process-use-when
-                resolve-imports
-                insert-implicit-ports
-                insert-default-connections]]
+  (prn "QQQQQQQQQQQQQQQQQQQQ")
+  (let [phases [process-use-when
+                process-imports
+                resolve-step-types]]
     (reduce (fn [ast phase]
-              (ast-edit ast matcher phase)) ast phases)))
+              (phase ast)) ast phases)))
 
 (defn make-pipeline-ast
   [evts]

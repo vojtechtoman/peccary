@@ -7,11 +7,15 @@
 
 (def identity-file "test/data/identity.xpl")
 (def identity-str (slurp identity-file))
-(def identity-ast {:type :pipeline
+(def identity-ast {:type :pipeline,
                    :attrs {#peccary.xml.util.QName{:local-name "version" :ns-uri nil} "1.0"}
                    :extension-attrs {}
-                   :content [{:type :step :attrs {} :extension-attrs {} :content []}]})
+                   :content [{:type :step
+                              :step-type #peccary.xml.util.QName{:local-name "identity" :ns-uri "http://www.w3.org/ns/xproc"}
+                              :content [] :attrs {} :extension-attrs {} }]}
+)
 
+;"http://www.w3.org/ns/xproc"
 (defn parse-file
   [file]
   ;; Note: we explicitly realize the whole evts sequence here
@@ -29,18 +33,13 @@
 (defn- strip-location-info
   [ast]
   (xprocast/ast-edit ast
-                      (fn [n]
-                        (:location n))
-                      (fn [_ n]
-                        (dissoc n :location))))
+                     (fn [_ n]
+                       (dissoc n :location))
+                     :location))
 
 (defn make-ast
   [evts]
   (xmlast/parse xprocg/main-pipeline-rf evts))
-
-(defn- process-ast
-  [ast]
-  (xprocast/process-ast ast))
 
 (defn- file-ast
   [file]
@@ -87,5 +86,5 @@
 (deftest ast-manipulations
   (deftest noop
     (testing "No changes needed"
-        (is (ast-eq (process-ast identity-ast) identity-ast))))
+        (is (ast-eq (xprocast/process-ast identity-ast) identity-ast))))
 )
