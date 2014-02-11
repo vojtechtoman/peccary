@@ -62,11 +62,90 @@
       (isa? node-hierarchy (node-hierarchy-type node) type))
     nil))
 
-;;; matcher - fn [node] that decides if node needs to be updated
-;;; editor - fn [matcher-result node] that produces a modified node
-(defn ast-edit [ast editor & [matcher]]
+
+(defmulti get-readable-ports node-hierarchy-type)
+(defmethod get-readable-ports ::compound-step
+  [node]
+  {})                                   ;TODO
+
+(defmethod get-readable-ports :default
+  [node]
+  nil)
+
+
+;;; 
+
+(defmulti get-in-scope-types node-hierarchy-type)
+(defmethod get-in-scope-types ::compound-step
+  [node]
+  {})                                   ;TODO
+
+(defmethod get-in-scope-types :default
+  [node]
+  nil)
+
+
+;;; 
+
+(defmulti make-state (fn [node parent-state]
+                       (node-hierarchy-type node)))
+
+(defmethod make-state ::compound-step
+  [node parent-state]
+  (let [readable-ports (get-readable-ports node)
+        in-scope-types (get-in-scope-types node)]
+    (-> parent-state
+        (update-in [:readable-ports] #(merge % readable-ports))
+        (update-in [:in-scope-types] #(merge % in-scope-types)))))
+
+(defmethod make-state :default
+  [loc node parent-state]
+  parent-state)
+
+
+;;; matcher - fn [state node] that decides if node needs to be updated
+;;; editor - fn [matcher-result state node] that produces a modified node
+;; (defn ast-edit
+;;   [ast editor & [matcher]]
+;;   (let [z (make-ast-zipper ast)
+;;         initial-state nil]
+;;     (loop [loc z
+;;            s initial-state]
+;;       (if (zip/end? loc)
+;;         (zip/root loc)
+;;         (let [node (zip/node loc)
+;;               state (make-state node initial-state)]
+;;           (if-let [mr (when matcher (matcher state node))]
+;;             (recur (zip/next (zip/edit loc (partial (editor mr state)))) state)
+;;             (recur (zip/next loc) state)))))))
+;; ;; (defn ast-edit [ast editor & [matcher]]
+;; ;;   (let [z (make-ast-zipper ast)]
+;; ;;     (util/zipper-edit z editor matcher)))
+
+;;; editor - fn [matcher-result state node] that produces a modified node
+;;; matcher - fn [state node] that decides if node needs to be updated
+;;; make-state - fn [state node] that produces new state based on state and node
+(defn ast-edit
+  [ast editor & [matcher make-state]]
   (let [z (make-ast-zipper ast)]
-    (util/zipper-edit z editor matcher)))
+    (loop [loc z
+           stack nil
+           depth 0]
+      (if (zip/end? loc)
+        (zip/root loc)
+        (let [node (zip/node loc)
+              parent-state (first stack)
+              state (when make-state (make-state parent-state node))
+              next-node (if-let [mr (when matcher (matcher state node))]
+                          (zip/next (zip/edit loc (partial editor mr state)))
+                          (zip/next loc))
+              next-depth (-> next-node zip/path count)
+              next-stack (cond
+                          (= next-depth depth) stack ;sibling
+                          (> next-depth depth) (cons state stack) ;child
+                          :else (nthnext stack next-depth))] ;new branch
+          ;; (prn "state" state "pstate" parent-state "NODE:" (zip/node loc) "STACK:" next-stack)
+          (recur next-node next-stack next-depth))))))
 
 (defn- type-filter
   "Returns a fn that takes a node and returns true if the type of node is equal to type"
@@ -89,7 +168,7 @@
 
 ;;; AST processing phase: filtering based on use-when expressions
 (defn- use-when-editor
-  [[use-when node]]
+  [[use-when state node]]
   node)
 
 (defn- process-use-when
@@ -109,8 +188,7 @@
 
 (declare parse-import-target)
 (defn- imports-editor
-  [_ node]
-;  (prn 123123 node) 
+  [_ state node]
   (let [content (:content node)
         imports (filter (type-filter :import) content)
         sans-imports (remove (type-filter :import) content)
@@ -179,7 +257,6 @@
 
 (defn process-ast
   [ast]
-  (prn "QQQQQQQQQQQQQQQQQQQQ")
   (let [phases [process-use-when
                 process-imports
                 resolve-step-types]]
@@ -213,3 +290,9 @@
   (with-open [s (input-stream x)]
     (let [evts (xmlparse/parse s)]
       (make-step-source evts))))
+
+;;; 
+
+
+
+

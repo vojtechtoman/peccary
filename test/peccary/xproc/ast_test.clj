@@ -33,9 +33,9 @@
 (defn- strip-location-info
   [ast]
   (xprocast/ast-edit ast
-                     (fn [_ n]
+                     (fn aa [mr s n]
                        (dissoc n :location))
-                     :location))
+                     (fn bb [s n] (:location n))))
 
 (defn make-ast
   [evts]
