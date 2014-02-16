@@ -33,9 +33,9 @@
 (defn- strip-location-info
   [ast]
   (xprocast/ast-edit ast
-                     (fn aa [mr s n]
-                       (dissoc n :location))
-                     (fn bb [s n] (:location n))))
+                     nil
+                     [(fn strip-location [node state]
+                        {:node (dissoc node :location) :state state})]))
 
 (defn make-ast
   [evts]
