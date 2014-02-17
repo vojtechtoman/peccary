@@ -36,68 +36,57 @@
      (derive ::declare-step ::step-source)
      (derive ::library ::step-source)
 
+     (derive ::declare-step ::contains-step-declarations) ;TODO merge with step-source???
+     (derive ::library ::contains-step-declarations)
+
      (derive ::atomic-step ::step)
      (derive ::compound-step ::step)
      (derive ::declare-step ::compound-step)
 ))
 
+;;; miscellaneous helper methods
+
 (defn- node-type
  [node & [_]]
  (:type node))
 
-(defn- node-hierarchy-type
+(defn- hierarchy-type
  [node & [_]]
  (let [type (node-type node)]
    ({:pipeline ::pipeline :declare-step ::declare-step :library ::library :step ::atomic-step} type)))
 
+(defn- get-attr
+ [node attr]
+ (-> node :attrs (get attr)))
 
-;;; miscellaneous helper methods
+(defn- node-name
+  [node]
+  (get-attr node qn-a-name))
+
+(defn- type-filter
+ "Returns a fn that takes a node and returns true if the type of node is equal to type"
+ [type]
+ (fn [node & [_]]
+   (= type (node-type node))))
+
+(defn- hierarchy-type?
+  [node type]
+  (isa? node-hierarchy (hierarchy-type node) type))
+
+;; (defn- hierarchy-filter
+;;   [type]
+;;   (fn [node & [_]]
+;;     (when (hierarchy-type? node type)
+;;       type)))
+
+
+;;; AST traversal/editing
 
 (defn- make-ast-zipper
  [ast]
  (let []
    (zip/zipper (fn [n]
                  (not (empty? (:content n)))) :content (fn [n c] (assoc n :content c)) ast)))
-
-
-(defmulti get-readable-ports node-hierarchy-type)
-(defmethod get-readable-ports ::compound-step
- [node]
- {})                                   ;TODO
-
-(defmethod get-readable-ports :default
- [node]
- nil)
-
-
-;;; 
-
-(defmulti get-in-scope-types node-hierarchy-type)
-(defmethod get-in-scope-types ::compound-step
- [node]
- {})                                   ;TODO
-
-(defmethod get-in-scope-types :default
- [node]
- nil)
-
-
-;;; 
-
-(defmulti make-state (fn [node parent-state]
-                      (node-hierarchy-type node)))
-
-(defmethod make-state ::compound-step
- [node parent-state]
- (let [readable-ports (get-readable-ports node)
-       in-scope-types (get-in-scope-types node)]
-   (-> parent-state
-       (update-in [:readable-ports] #(merge % readable-ports))
-       (update-in [:in-scope-types] #(merge % in-scope-types)))))
-
-(defmethod make-state :default
- [loc node parent-state]
- parent-state)
 
 
 (defn- apply-editors
@@ -144,39 +133,39 @@
              (zip/node eloc))           ;no parent -> we are done
            (recur next stack :down)))))))
 
-(defn- type-filter
- "Returns a fn that takes a node and returns true if the type of node is equal to type"
- [type]
- (fn [node & [_]]
-   (= type (node-type node))))
+(defn- e-noop
+  "A no-op AST editor"
+  [node state]
+  {:node node :state state})
 
-(defn- hierarchy-filter
-  [type]
-  (fn [node & [_]]
-    (when (isa? node-hierarchy (node-hierarchy-type node) type)
-      type)))
+;;; 
+
+;;; port-related
 
 (defn- create-port
  [name type & [{kind qn-a-kind sequence qn-a-sequence primary qn-a-primary}]]
  (let [attrs {qn-a-port name qn-a-kind kind qn-a-sequence sequence qn-a-primary primary}]
    {:type type :attrs attrs}))
 
-(defn- get-attr
- [node attr]
- (-> node :attrs attr))
+(defn- port?
+  [node]
+  (contains? #{:input :output} (node-type node)))
 
-;;; 
+(defn- port-name
+  [port-node]
+  (get-attr port-node qn-a-port))
 
-;;; AST processing phase: discovering step declarations
-
-
-
-;;; 
-
-
-(defn- make-dependency-graph
- [step]
- nil)
+(defn- add-port
+  [node port-node]
+  (let [name (port-name port-node)
+        content (:content node)
+        collisions (filter (fn [n]
+                             (and (port? n)
+                                  (= (port-name n) name))) content)]
+    (if (empty? collisions)
+      (let [new-content (cons port-node content)]
+        (assoc node :content new-content))
+      (err-XS0011))))
 
 ;;; 
 
@@ -209,77 +198,235 @@
    (let [evts (xmlparse/parse s)]
      (make-step-source evts))))
 
-;;;
+;;; 
 
-(defn- e-noop
-  [node state]
-  {:node node :state state})
+(defn- step-declaration?
+  [node]
+  (hierarchy-type? node ::declare-step))
+
+(defn- make-step-type
+  [decl]
+  (let [type (get-attr decl qn-a-type)
+        content (:content decl)
+        signature (filter (fn [n] (#{:input :output :option} (node-type n))) content)
+        impl decl]
+    {:type type :signature signature :impl impl}))
+
+(defn- add-step-type
+  [m type]
+  (if-let [type-name (:type type)]      ;ignore step types with no type name
+    (if (contains? m type-name)
+      (err-XS0036)
+      (assoc m type-name type))))
+
+(defn- add-step-types
+  [m types]
+  (reduce (fn [m type]
+            (add-step-type m type)) m types))
+
+;;;
 
 ;;; AST processing phase: filtering based on use-when expressions
 (defn- e-use-when
  [node state]
  (e-noop node state))                   ;TODO
 
-;;; AST processing phase: insertion default input ports
-(defmulti e-default-input-ports node-hierarchy-type)
+;;; AST processing phase: insertion of default input ports
+(defn- step-name
+  [node]
+  (when-let [type (hierarchy-type node ::step)]
+    (or (get-attr node qn-a-name) "STEP TODO") ;TODO
+))
 
-(defmethod e-default-input-ports ::pipeline
+;;; ports related
+
+(defn- port-ref
+  [step port-name]
+  {:step step :port port-name})
+
+(defn- port-kind
+  [port-node]
+  (if-let [kind (-> port-node (get-attr qn-a-kind))]
+    kind
+    "document"))
+
+(defn- port-primary?
+  "returns nil if not set"
+  [port-node]
+  (-> port-node (get-attr qn-a-primary) as-boolean))
+
+(defn- primary-port
+  [ports]
+  ;; candidates: input ports that do not explicitly specify primary="false"
+  (when-let [candidates (filter (fn [n]
+                                  (not (false? (port-primary? n)))) ports)]
+    (if (= 1 (count candidates))
+      (first candidates)
+      (some #(when (port-primary? %) %) candidates))))
+
+(defn- primary-input-port
+  [node]
+  (let [content (:content node)
+        ports (filter (fn [n]
+                        (and (= (node-type n) :input)
+                             (not= (port-kind n) "parameter"))) content)]
+    (primary-port ports)))
+
+(defn- primary-parameter-input-port
+  [node]
+  (let [content (:content node)
+        ports (filter (fn [n]
+                        (and (= (node-type n) :input)
+                             (= (port-kind n) "parameter"))) content)]
+    (primary-port ports)))
+
+(defn- primary-output-port
+  [node]
+  (let [content (:content node)
+        ports (filter (type-filter :output) content)]
+    (primary-port ports)))
+
+(defn- check-ports
+  [node]
+  nil)                                  ;TODO
+
+(defn- pipeline-check-and-set-internal-readable-ports
+  [node state]
+  (do (check-ports node)
+      (let [sname (step-name node)
+            drp-name (primary-input-port node)
+            drp (when drp-name (port-ref sname drp-name))
+            parameter-drp-name (primary-parameter-input-port node)
+            parameter-drp (when parameter-drp-name (port-ref sname parameter-drp-name))
+            new-state (-> state
+                          (assoc :default-readable-port drp)
+                          (assoc :default-readable-parameter-port parameter-drp))]
+        {:node node :state new-state})))
+
+(defmulti e-enter-step hierarchy-type)
+
+(defmethod e-enter-step ::pipeline
   [node state]
   (let [content (:content node)
         source (create-port port-source :input
                             {qn-a-kind "document" qn-a-sequence "true" qn-a-primary "true"})
         parameters (create-port port-parameters :input
                                 {qn-a-kind "parameter" qn-a-sequence "true" qn-a-primary "true"})
-        new-content (vec (concat [source parameters] content))
+        result (create-port port-result :output {qn-a-sequence "true" qn-a-primary "true"})
+        new-content (concat [source parameters result] content)
         new-node (assoc node :content new-content)]
-    {:node new-node :state state}))
+    (pipeline-check-and-set-internal-readable-ports new-node state)))
 
-(defmethod e-default-input-ports :default
+(defmethod e-enter-step ::declare-step
+  [node state]
+  (pipeline-check-and-set-internal-readable-ports node state))
+
+(defmethod e-enter-step :default
   [node state]
   (e-noop node state))
 
-;;; AST processing phase: insertion default output ports
-(defmulti e-default-output-ports node-hierarchy-type)
+;;; AST processing phase: insertion of default output ports
+(defmulti e-leave-step hierarchy-type)
 
-(defmethod e-default-output-ports ::pipeline
+(defmethod e-leave-step ::declare-step
   [node state]
-  (let [content (:content node)
-        result (create-port port-result :output
-                            {qn-a-sequence "true" qn-a-primary "true"})
-        new-content (vec (concat [result] content))
-        new-node (assoc node :content new-content)]
-    {:node new-node :state state}))
+  (let [sname (step-name node)
+        drp-name (primary-output-port node)
+        drp (when drp-name (port-ref sname drp-name))
+        new-state (assoc state :default-readable-port drp)]
+    {:node node :state new-state}))
 
-(defmethod e-default-output-ports :default
+(defmethod e-leave-step :default
   [node state]
   (e-noop node state))
 
 ;;; AST processing phase: resolution of imports
 
-(defmulti e-imports (hierarchy-filter ::contains-imports))
+(defmulti e-imports hierarchy-type)
 
 (defmethod e-imports ::contains-imports
  [node state]
  (let [content (:content node)
-       imports-rest (group-by (type-filter :import) content)
-       imports (imports-rest true)
-       rest (imports-rest false)
+       imports-other (group-by (type-filter :import) content)
+       imports (imports-other true)
+       other (imports-other false)
        steps (reduce (fn [steps import]
                        (let [href (get-attr import qn-a-href)
                              imported-steps (parse-import-target href)]
                          (merge steps imported-steps))) {} imports)
-       new-node (assoc node :content rest :in-scope-types steps)] ;TODO duplicates etc.
-   {:node new-node :state state}))
+       ist (:in-scope-types state)
+       merged-ist (add-step-types ist steps)
+       new-state (assoc state :in-scope-types merged-ist)
+       new-node (assoc node :content other :in-scope-types merged-ist)]
+   {:node new-node :state new-state}))
 
 (defmethod e-imports :default
   [node state]
   (e-noop node state))
 
+;;;
+
+(defmulti e-local-step-declarations hierarchy-type)
+
+(defmethod e-local-step-declarations ::contains-step-declarations
+ [node state]
+ (let [content (:content node)
+       decls (filter step-declaration? content)
+       ist (:in-scope-types state)
+       merged-ist (add-step-types ist (map #(make-step-type %) decls))
+       new-state (assoc state :in-scope-types merged-ist)
+       new-node (assoc node :in-scope-types merged-ist)]
+   {:node new-node :state new-state}))
+
+(defmethod e-local-step-declarations :default
+  [node state]
+  (e-noop node state))
+
+;;; AST processing phase: eliminating dead code
+
+(defn- remove-step-declarations-with-no-type
+  [node]
+  (let [content (:content node)
+        filtered (remove (fn [n]
+                           (and (step-declaration? n)
+                                (nil? (get-attr n qn-a-type)))) content)]
+    (assoc node :content filtered)))
+
+(defmulti e-eliminate-dead-code hierarchy-type)
+
+(defmethod e-eliminate-dead-code ::contains-step-declarations
+ [node state]
+ (let [new-node (-> node remove-step-declarations-with-no-type)]
+   {:node new-node :state state}))
+
+(defmethod e-eliminate-dead-code :default
+  [node state]
+  (e-noop node state))
+
 ;;; 
+
+(def stdlib (add-step-types {} [{:type (xproc-qn "identity")
+                                 :signature [(create-port port-source :input
+                                                          {qn-a-kind "document"
+                                                           qn-a-sequence "true"
+                                                           qn-a-primary "true"})
+                                             (create-port port-result :output
+                                                          {qn-a-sequence "true"
+                                                           qn-a-primary "true"})]
+                                 :body 1}]))
+
+;;;
 
 (defn process-ast
   [ast]
-  (let [pre-editors [e-use-when e-default-input-ports e-imports]
-        post-editors [e-default-output-ports]
-        initial-state {}]
+  (let [pre-editors [e-use-when            ;process use-when
+                     e-eliminate-dead-code ;eliminate dead code
+                     e-imports             ;resolve imports
+                     e-local-step-declarations ;proces local step declarations
+                     e-enter-step
+                     ]
+        post-editors [e-leave-step
+                      ]
+        initial-state {:in-scope-types stdlib
+                       :default-readable-port nil}]
     (ast-edit ast initial-state pre-editors post-editors)))

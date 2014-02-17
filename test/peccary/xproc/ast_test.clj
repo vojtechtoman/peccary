@@ -12,10 +12,36 @@
                    :extension-attrs {}
                    :content [{:type :step
                               :step-type #peccary.xml.util.QName{:local-name "identity" :ns-uri "http://www.w3.org/ns/xproc"}
-                              :content [] :attrs {} :extension-attrs {} }]}
-)
+                              :content [] :attrs {} :extension-attrs {} }]})
 
-;"http://www.w3.org/ns/xproc"
+(def identity-ast-processed
+  {:type :pipeline
+   :attrs {#peccary.xml.util.QName{:local-name "version" :ns-uri nil} "1.0"}
+   :extension-attrs {}
+   :in-scope-types {}
+   :content [{:type :output
+              :attrs {#peccary.xml.util.QName{:local-name "port" :ns-uri nil} "result"
+                      #peccary.xml.util.QName{:local-name "kind" :ns-uri nil} nil
+                      #peccary.xml.util.QName{:local-name "sequence" :ns-uri nil} "true"
+                      #peccary.xml.util.QName{:local-name "primary" :ns-uri nil} "true"}}
+             {:type :input
+              :attrs {#peccary.xml.util.QName{:local-name "port" :ns-uri nil} "parameters"
+                      #peccary.xml.util.QName{:local-name "kind" :ns-uri nil} "parameter"
+                      #peccary.xml.util.QName{:local-name "sequence" :ns-uri nil} "true"
+                      #peccary.xml.util.QName{:local-name "primary" :ns-uri nil} "true"}}
+             {:type :input
+              :attrs {#peccary.xml.util.QName{:local-name "port" :ns-uri nil} "source"
+                      #peccary.xml.util.QName{:local-name "kind" :ns-uri nil} "document"
+                      #peccary.xml.util.QName{:local-name "sequence" :ns-uri nil} "true"
+                      #peccary.xml.util.QName{:local-name "primary" :ns-uri nil} "true"}}
+             {:type :step
+              :step-type #peccary.xml.util.QName{:local-name "identity" :ns-uri "http://www.w3.org/ns/xproc"}
+              :attrs {}
+              :extension-attrs {}
+              :content []}]}
+  )
+
+                                        ;"http://www.w3.org/ns/xproc"
 (defn parse-file
   [file]
   ;; Note: we explicitly realize the whole evts sequence here
@@ -53,7 +79,7 @@
   [s]
   (-> s (clojure.string/replace "<p:" "  <!-- comment --> 
 <?a b?>  <p:")
-   (clojure.string/replace "/>" "  /> <?a b?> 
+      (clojure.string/replace "/>" "  /> <?a b?> 
 <!-- comment --> <!-- comment -->  ")))
 
 (defn- ast-eq
@@ -84,7 +110,6 @@
 ;;; 
 
 (deftest ast-manipulations
-  (deftest noop
-    (testing "No changes needed"
-        (is (ast-eq (xprocast/process-ast identity-ast) identity-ast))))
-)
+  (deftest identity-processing
+    (testing "AST processing of the identity pipeline"
+      (is (ast-eq (xprocast/process-ast identity-ast) identity-ast-processed)))))

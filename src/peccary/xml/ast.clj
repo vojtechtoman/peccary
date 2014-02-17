@@ -8,7 +8,7 @@
 
 (defn flatten-and-filter 
   [x]
-  (into [] (filter #(not (nil? %)) (flatten x))))
+  (filter #(not (nil? %)) (flatten x)))
 
 (defn- namespace-bindings
   [evt]
