@@ -11,9 +11,14 @@
 ;;; The XProc grammar
 ;;; TODO (p:)use-when, p:documentation, and p:pipeinfo
 
-(defn- extension-attr-name? 
+(defn- ns-decl?
   [qname]
-  (not (nil? (xmlutil/ns-uri qname))))
+  (= xmlutil/ns-xmlns (xmlutil/ns-uri qname)))
+
+(defn- extension-attr-name?
+  [qname]
+  (when-let [ns-uri (xmlutil/ns-uri qname)]
+    (not (ns-decl? qname))))
 
 (defn- create-xproc-elt-validator
   [qname & [attrspec]]
@@ -27,26 +32,35 @@
        ;; the name matches
        (= qname ename)
        ;; all of the unknown attributes are extension attributes
-       (or (empty? (filter (fn [[attr _]]
-                             (not (extension-attr-name? attr))) unknown))
+       (or (empty? (remove (fn [[attr-name _]]
+                             (or (extension-attr-name? attr-name)
+                                 (ns-decl? attr-name))) unknown))
            (err-XS0008))
        ;; all required specified
        (or (empty? (reduce #(dissoc %1 %2) required (keys eattrs)))
            (err-XS0038))))))
 
+(defn- attr-name-type
+  [qname]
+  (cond
+   (extension-attr-name? qname) :extension
+   (ns-decl? qname) :namespace-declaration
+   :else :regular))
+
 (defn- create-xproc-ast-constructor
   [type]
-  (fn xproc-ast-c [selt content]
-    (let [attrs-grouped (group-by (fn [[attr _]]
-                                    (extension-attr-name? attr)) (:attrs selt))
-          regular-attrs (into {} (get attrs-grouped false))
-          extension-attrs (into {} (get attrs-grouped true))
+  (fn xproc-ast-c [ctx selt content]
+    (let [attrs-grouped (group-by (fn [[attr-name _]]
+                                    (attr-name-type attr-name)) (:attrs selt))
+          regular-attrs (into {} (:regular attrs-grouped))
+          extension-attrs (into {} (:extension attrs-grouped))
           loc (:location selt)]
-      {:type type
-       :content content
-       :attrs regular-attrs
-       :extension-attrs extension-attrs
-       :location loc})))
+      (do
+        {:type type
+         :content content
+         :attrs regular-attrs
+         :extension-attrs extension-attrs
+         :ctx (assoc ctx :location loc)}))))
 
 (defmacro defxprocelt
   [var {qname :qname attrs :attrs model-rf :model type :type}]
@@ -235,10 +249,10 @@
                                       (catch-rf %))})
 
 (xmlast/defelt step-rf
-  (fn xproc-step-ast-c [selt content]
+  (fn xproc-step-ast-c [ctx selt content]
     (let [qname (:qname selt)
           c (create-xproc-ast-constructor :step)
-          m (c selt content)]
+          m (c ctx selt content)]
       (-> m (assoc :step-type qname))))
   #(fp/rep* (fp/alt (input-rf %)        ;TODO support ignorable inside step?
                     (with-option-rf %)

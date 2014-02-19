@@ -128,6 +128,8 @@
   ;; constructor - a fn[selt content], produces an ast instance
   ;; model-rf a fn[ctx], produces a fnparse rule
   ;; validator - a fn[selt], a boolean function that validates selt
+
+  ;; TODO avoid repeated construction of the nested context somehow
   (cond
    (not (symbol? var)) (throw (IllegalArgumentException. "var must be a symbol"))
    :else (let [ctx# (gensym "ctx")
@@ -147,8 +149,9 @@
                                      [content# `~model#]
                                      [eelt# `~elt-end-rf#]
                                      ign#)]
-                          (let [content-flattened# (flatten-and-filter (list ~content#))]
-                            (~constructor ~selt# content-flattened#)))))))
+                          (let [content-flattened# (flatten-and-filter (list ~content#))
+                                selt-context# (nested-context ~ctx# ~selt#)]
+                            (~constructor selt-context# ~selt# content-flattened#)))))))
 
 (defn- location-str
   [evt]

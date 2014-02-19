@@ -56,12 +56,19 @@
   (xmlparse/parse-str s))
 
 ;;; removes the location info from the AST tree to simplify AST comparisons
-(defn- strip-location-info
+;; (defn- strip-location-info
+;;   [ast]
+;;   (xprocast/ast-edit ast
+;;                      nil
+;;                      [(fn strip-location [node state]
+;;                         {:node (dissoc node :location) :state state})]))
+
+(defn- strip-ctx
   [ast]
   (xprocast/ast-edit ast
                      nil
-                     [(fn strip-location [node state]
-                        {:node (dissoc node :location) :state state})]))
+                     [(fn strip-ctx [node state]
+                        {:node (dissoc node :ctx) :state state})]))
 
 (defn make-ast
   [evts]
@@ -84,7 +91,7 @@
 
 (defn- ast-eq
   [ast1 ast2]
-  (= (strip-location-info ast1) (strip-location-info ast2)))
+  (= (strip-ctx ast1) (strip-ctx ast2)))
 
 ;;;
 

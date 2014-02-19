@@ -30,17 +30,23 @@
   [^XMLStreamReader sreader]
   (evt sreader {:type :end-document}))
 
-;;; TODO include also namespace declarations!!!
 (defn- attr-hash
   [^XMLStreamReader sreader]
-  (into {}
-        (for [i (range (.getAttributeCount sreader))
-              :let [local-name (.getAttributeLocalName sreader i)
-                    ns-uri (.getAttributeNamespace sreader i)
-                    prefix (.getAttributePrefix sreader i)
-                    qname (xmlutil/qn local-name ns-uri prefix)
-                    value (.getAttributeValue sreader i)]]
-          [qname value])))
+  (let [regular (into {} (for [i (range (.getAttributeCount sreader))
+                               :let [local-name (.getAttributeLocalName sreader i)
+                                     ns-uri (.getAttributeNamespace sreader i)
+                                     prefix (.getAttributePrefix sreader i)
+                                     qname (xmlutil/qn local-name ns-uri prefix)
+                                     value (.getAttributeValue sreader i)]]
+                           [qname value]))
+        with-ns-decls (into regular (for [i (range (.getNamespaceCount sreader))
+                                          :let [ns-uri (.getNamespaceURI sreader i)
+                                                prefix (.getNamespacePrefix sreader i)
+                                                qname (if (empty? prefix)
+                                                        xmlutil/qn-xmlns
+                                                        (xmlutil/qn prefix xmlutil/ns-xmlns))]]
+                                      [qname ns-uri]))]
+    with-ns-decls))
 
 (defn- start-element
   [^XMLStreamReader sreader]
@@ -67,7 +73,7 @@
 (defn- comm
   [^XMLStreamReader sreader]
   (let [data (.getText sreader)]
-   (evt sreader {:type :comment :data data})))
+    (evt sreader {:type :comment :data data})))
 
 (defn- cdata
   [^XMLStreamReader sreader]
@@ -80,8 +86,8 @@
         data (.getPIData sreader)]
     (evt sreader {:type :pi :target target :data data})))
 
-; Note, sreader is mutable and mutated here in pull-seq, but it's
-; protected by a lazy-seq so it's thread-safe.
+                                        ; Note, sreader is mutable and mutated here in pull-seq, but it's
+                                        ; protected by a lazy-seq so it's thread-safe.
 (defn- pull-seq-doc
   "Creates a seq of events. The XMLStreamConstants/SPACE clause below doesn't seem to
 be triggered by the JDK StAX parser, but is by others. Leaving in to be more complete."
@@ -117,8 +123,8 @@ be triggered by the JDK StAX parser, but is by others. Leaving in to be more com
 be triggered by the JDK StAX parser, but is by others. Leaving in to be more complete."
   [^XMLStreamReader sreader]
   (cons
-     (start-document sreader)
-     (pull-seq-doc sreader)))
+   (start-document sreader)
+   (pull-seq-doc sreader)))
 
 (def ^{:private true} xml-input-factory-props
   {:allocator javax.xml.stream.XMLInputFactory/ALLOCATOR
