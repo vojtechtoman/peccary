@@ -1,12 +1,9 @@
-(ns peccary.xml.util
+(ns peccary.xml
   (:gen-class)
   (:import [javax.xml XMLConstants]))
 
 (defrecord QName [local-name ns-uri])
 
-;;; TODO: At the moment the prefix is significant in the = comparison
-;;; which is not correct. We will need a custom type that has map-like
-;;; semantics, but which does not use prefix in the = comparison.
 ;;; (We don't use javax.xml.namespace.QName as its str representations
 ;;; are not supported by the reader.)
 (defn qn
@@ -36,21 +33,14 @@
 
 ;;; 
 
-(defn namespace-declaration?
+(defn ns-decl?
   [qname]
   (= ns-xmlns (ns-uri qname)))
 
 ;;; TODO throw an error if not an xmlns qname?
-(defn namespace-prefix
+(defn ns-prefix
   [qname]
-  (when (and (namespace-declaration? qname) (not= qn-xmlns qname))
+  (when (and (ns-decl? qname)
+             (not= qn-xmlns qname))
     (local-name qname)))
 
-;;; 
-
-(defn resolve-uri
-  [parent relative]
-  (cond
-   (nil? parent) relative
-   (nil? relative) parent
-   :else relative))                     ;TODO!

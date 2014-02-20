@@ -1,6 +1,7 @@
 (ns peccary.xml.ast
   (:gen-class)
-  (:require [peccary.xml.util :as xmlutil]
+  (:require [peccary.xml :refer :all]
+            [peccary.util :refer :all]
             [name.choi.joshua.fnparse :as fp]))
 
 
@@ -8,19 +9,22 @@
 
 (defn flatten-and-filter 
   [x]
-  (filter #(not (nil? %)) (flatten x)))
+  (remove nil? (flatten x)))
 
 (defn- namespace-bindings
   [evt]
   (let [attrs (:attrs evt)
         ns-attrs (filter (fn [[qname _]]
-                           (xmlutil/namespace-declaration? qname)) attrs)]
+                           (ns-decl? qname))
+                         attrs)]
     (reduce (fn [decls [qname val]]
-              (assoc decls (xmlutil/namespace-prefix qname) val)) {} ns-attrs)))
+              (assoc decls (ns-prefix qname) val))
+            {}
+            ns-attrs)))
 
 (defn- base-uri
   [evt]
-  (when-let [xml-base (-> evt :attrs (get xmlutil/qn-xml-base))]
+  (when-let [xml-base (-> evt :attrs (get qn-xml-base))]
     xml-base))
 
 (defn nested-context
@@ -28,9 +32,9 @@
   (let [evt-ns-decls (namespace-bindings evt)
         ctx-base-uri (:base-uri ctx)
         evt-base-uri (base-uri evt)
-        base-uri (xmlutil/resolve-uri ctx-base-uri evt-base-uri)]
+        base-uri (resolve-uri ctx-base-uri evt-base-uri)]
     (-> ctx
-        (update-in [:ns-context] #(merge % evt-ns-decls))
+        (update-in [:ns-context] (partial merge evt-ns-decls))
         (assoc :base-uri base-uri))))
 
 (defn- ign-ws-rf 

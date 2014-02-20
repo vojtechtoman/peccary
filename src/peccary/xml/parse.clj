@@ -1,6 +1,6 @@
 (ns peccary.xml.parse
   (:gen-class)
-  (:require [peccary.xml.util :as xmlutil])
+  (:require [peccary.xml :refer :all])
   (:import (javax.xml.stream XMLInputFactory
                              XMLStreamReader
                              XMLStreamConstants)))
@@ -36,15 +36,15 @@
                                :let [local-name (.getAttributeLocalName sreader i)
                                      ns-uri (.getAttributeNamespace sreader i)
                                      prefix (.getAttributePrefix sreader i)
-                                     qname (xmlutil/qn local-name ns-uri prefix)
+                                     qname (qn local-name ns-uri prefix)
                                      value (.getAttributeValue sreader i)]]
                            [qname value]))
         with-ns-decls (into regular (for [i (range (.getNamespaceCount sreader))
                                           :let [ns-uri (.getNamespaceURI sreader i)
                                                 prefix (.getNamespacePrefix sreader i)
                                                 qname (if (empty? prefix)
-                                                        xmlutil/qn-xmlns
-                                                        (xmlutil/qn prefix xmlutil/ns-xmlns))]]
+                                                        qn-xmlns
+                                                        (qn prefix ns-xmlns))]]
                                       [qname ns-uri]))]
     with-ns-decls))
 
@@ -53,7 +53,7 @@
   (let [local-name (.getLocalName sreader)
         ns-uri (.getNamespaceURI sreader)
         prefix (.getPrefix sreader)
-        qname (xmlutil/qn local-name ns-uri prefix)
+        qname (qn local-name ns-uri prefix)
         attrs (attr-hash sreader)]
     (evt sreader {:type :start-element :qname qname :attrs attrs})))
 
@@ -62,7 +62,7 @@
   (let [local-name (.getLocalName sreader)
         ns-uri (.getNamespaceURI sreader)
         prefix (.getPrefix sreader)
-        qname (xmlutil/qn local-name ns-uri prefix)]
+        qname (qn local-name ns-uri prefix)]
     (evt sreader {:type :end-element :qname qname})))
 
 (defn- text
@@ -126,7 +126,7 @@ be triggered by the JDK StAX parser, but is by others. Leaving in to be more com
    (start-document sreader)
    (pull-seq-doc sreader)))
 
-(def ^{:private true} xml-input-factory-props
+(def ^:private xml-input-factory-props
   {:allocator javax.xml.stream.XMLInputFactory/ALLOCATOR
    :coalescing javax.xml.stream.XMLInputFactory/IS_COALESCING
    :namespace-aware javax.xml.stream.XMLInputFactory/IS_NAMESPACE_AWARE
@@ -144,13 +144,14 @@ be triggered by the JDK StAX parser, but is by others. Leaving in to be more com
       (.setProperty fac prop v))
     fac))
 
+;;; FIXME use XMLEventReader to get proper support for CDATA sections!!!
 (defn- source-seq
   "Parses the XML InputSource source using a pull-parser. Returns
 a lazy sequence of ParseEvent records. Accepts key pairs
 with XMLInputFactory options, see http://docs.oracle.com/javase/6/docs/api/javax/xml/stream/XMLInputFactory.html
-and xml-input-factory-props for more information. Defaults coalescing true."
+and xml-input-factory-props for more information."
   [s & {:as props}]
-  (let [fac (new-xml-input-factory (merge {:coalescing true} props))
+  (let [fac (new-xml-input-factory props)
         ;; Reflection on following line cannot be eliminated via a
         ;; type hint, because s is advertised by fn parse to be an
         ;; InputStream or Reader, and there are different

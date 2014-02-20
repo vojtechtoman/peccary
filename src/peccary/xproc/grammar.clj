@@ -1,8 +1,7 @@
 (ns peccary.xproc.grammar
   (:gen-class)
-  (:require
+  (:require [peccary.xml :refer :all]
             [peccary.xml.ast :as xmlast]
-            [peccary.xml.util :as xmlutil]
             [peccary.xproc.error :refer :all]
             [peccary.xproc.vocabulary :refer :all]
             [name.choi.joshua.fnparse :as fp]))
@@ -11,13 +10,9 @@
 ;;; The XProc grammar
 ;;; TODO (p:)use-when, p:documentation, and p:pipeinfo
 
-(defn- ns-decl?
-  [qname]
-  (= xmlutil/ns-xmlns (xmlutil/ns-uri qname)))
-
 (defn- extension-attr-name?
   [qname]
-  (when-let [ns-uri (xmlutil/ns-uri qname)]
+  (when-let [ns-uri (ns-uri qname)]
     (not (ns-decl? qname))))
 
 (defn- create-xproc-elt-validator
@@ -26,18 +21,24 @@
     (let [ename (:qname evt)
           eattrs (:attrs evt)
           required (into {} (filter (fn [[_ spec]]
-                                      (= spec :required)) attrspec))
-          unknown (reduce #(dissoc %1 %2) eattrs (keys attrspec))]
+                                      (= spec :required))
+                                    attrspec))
+          unknown (reduce #(dissoc %1 %2)
+                          eattrs
+                          (keys attrspec))]
       (and
        ;; the name matches
        (= qname ename)
        ;; all of the unknown attributes are extension attributes
        (or (empty? (remove (fn [[attr-name _]]
                              (or (extension-attr-name? attr-name)
-                                 (ns-decl? attr-name))) unknown))
+                                 (ns-decl? attr-name)))
+                           unknown))
            (err-XS0008))
        ;; all required specified
-       (or (empty? (reduce #(dissoc %1 %2) required (keys eattrs)))
+       (or (empty? (reduce #(dissoc %1 %2)
+                           required
+                           (keys eattrs)))
            (err-XS0038))))))
 
 (defn- attr-name-type
@@ -51,25 +52,24 @@
   [type]
   (fn xproc-ast-c [ctx selt content]
     (let [attrs-grouped (group-by (fn [[attr-name _]]
-                                    (attr-name-type attr-name)) (:attrs selt))
+                                    (attr-name-type attr-name))
+                                  (:attrs selt))
           regular-attrs (into {} (:regular attrs-grouped))
           extension-attrs (into {} (:extension attrs-grouped))
           loc (:location selt)]
-      (do
-        {:type type
-         :content content
-         :attrs regular-attrs
-         :extension-attrs extension-attrs
-         :ctx (assoc ctx :location loc)}))))
+      {:type type
+       :content content
+       :attrs regular-attrs
+       :extension-attrs extension-attrs
+       :ctx (assoc ctx :location loc)})))
 
 (defmacro defxprocelt
   [var {qname :qname attrs :attrs model-rf :model type :type}]
-  (if (nil? qname)
-    (throw (IllegalArgumentException. "qname is required"))
-    (let [ctype (or type `(keyword (xmlutil/local-name ~qname)))
-          constructor `(create-xproc-ast-constructor ~ctype)
-          elt-validator `(create-xproc-elt-validator ~qname ~attrs)]
-      `(xmlast/defelt ~var ~constructor ~model-rf ~elt-validator))))
+  {:pre [(not (nil? qname))]}
+  (let [ctype (or type `(keyword (local-name ~qname)))
+        constructor `(create-xproc-ast-constructor ~ctype)
+        elt-validator `(create-xproc-elt-validator ~qname ~attrs)]
+    `(xmlast/defelt ~var ~constructor ~model-rf ~elt-validator)))
 
 ;;; 
 
@@ -259,7 +259,7 @@
                     (with-param-rf %)
                     (log-rf %)))
   (fn step-elt-v [evt]
-    (not (nil? (xmlutil/ns-uri (:qname evt))))))
+    (not (nil? (ns-uri (:qname evt))))))
 
 (defn- subpipeline-rf 
   [ctx]
