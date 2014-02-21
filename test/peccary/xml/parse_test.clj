@@ -1,7 +1,8 @@
 (ns peccary.xml.parse-test
   (:require [clojure.test :refer :all]
             [peccary.xml :refer :all]
-            [peccary.xml.parse :as xmlparse]))
+            [peccary.xml.parse :as xmlparse])
+  (:import (javax.xml.stream XMLStreamException)))
 
 (defn parse-file
   [file]
@@ -28,7 +29,15 @@
 
 (deftest parse-error
   (testing "Parsing of ill-formed XML"
-    (is (thrown? javax.xml.stream.XMLStreamException (doall (parse-str "<a>"))))))
+    (is (thrown? XMLStreamException (doall (parse-str "<a>"))))
+    (is (thrown? XMLStreamException (doall (parse-str "<undeclared:a/>"))))
+    (is (thrown? XMLStreamException (doall (parse-str "<a><!--</a>"))))
+    (is (thrown? XMLStreamException (doall (parse-str "<a b/>"))))
+    (is (thrown? XMLStreamException (doall (parse-str "<a undeclared:b='c'/>"))))
+    (is (thrown? XMLStreamException (doall (parse-str "<a xmlns:p=''/>"))))
+    (is (thrown? XMLStreamException (doall (parse-str "<a xmlns:xmlns='x'/>"))))
+    (is (thrown? XMLStreamException (doall (parse-str "<a xmlns:a='b' xmlns:a='b'/>"))))
+    (is (thrown? XMLStreamException (doall (parse-str "<?xml version='2.0'?><a/>"))))))
 
 (deftest parse
   (testing "Various examples of well-formed XML documents"

@@ -19,10 +19,22 @@
   {:type :pipeline
    :attrs {(qn "version") "1.0"}
    :extension-attrs {}
-   :in-scope-types {}
-   :content [{:type :output
-              :attrs {(qn "port") "result"
-                      (qn "kind") nil
+   :in-scope-types {(qn "identity" "http://www.w3.org/ns/xproc")
+                    {:name (qn "identity" "http://www.w3.org/ns/xproc")
+                     :signature {:content [{:type :input
+                                            :attrs {(qn "port") "source"
+                                                    (qn "kind") "document"
+                                                    (qn "sequence") "true"
+                                                    (qn "primary") "true"}}
+                                           {:type :output
+                                            :attrs {(qn "port") "result"
+                                                    (qn "kind") nil
+                                                    (qn "sequence") "true"
+                                                    (qn "primary") "true"}}]}
+                     :body 1}}
+   :content [{:type :input
+              :attrs {(qn "port") "source"
+                      (qn "kind") "document"
                       (qn "sequence") "true"
                       (qn "primary") "true"}}
              {:type :input
@@ -30,19 +42,32 @@
                       (qn "kind") "parameter"
                       (qn "sequence") "true"
                       (qn "primary") "true"}}
-             {:type :input
-              :attrs {(qn "port") "source"
-                      (qn "kind") "document"
+             {:type :output
+              :attrs {(qn "port") "result"
+                      (qn "kind") nil
                       (qn "sequence") "true"
-                      (qn "primary") "true"}}
+                      (qn "primary") "true"}
+              :content [{:type :pipe
+                         :attrs {(qn "step") "STEP TODO"
+                                 (qn "port") "result"}}]}
              {:type :step
               :step-type (qn "identity" "http://www.w3.org/ns/xproc")
               :attrs {}
               :extension-attrs {}
-              :content []}]}
-  )
+              :content [{:type :input
+                         :attrs {(qn "port") "source"
+                                 (qn "kind") "document"
+                                 (qn "sequence") "true"
+                                 (qn "primary") "true"}
+                         :content [{:type :pipe
+                                    :attrs {(qn "step") "STEP TODO"
+                                            (qn "port") "source"}}]}
+                        {:type :output
+                         :attrs {(qn "port") "result"
+                                 (qn "kind") nil
+                                 (qn "sequence") "true"
+                                 (qn "primary") "true"}}]}]})
 
-                                        ;"http://www.w3.org/ns/xproc"
 (defn parse-file
   [file]
   ;; Note: we explicitly realize the whole evts sequence here
@@ -68,7 +93,7 @@
   [ast]
   (xprocast/ast-edit ast
                      nil
-                     [(fn strip-ctx [node state]
+                     [(fn strip-ctx [state node]
                         {:node (dissoc node :ctx) :state state})]))
 
 (defn make-ast

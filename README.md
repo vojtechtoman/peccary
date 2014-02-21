@@ -10,6 +10,6 @@ FIXME
 
 ## License
 
-Copyright © 2014 Vojtěch Toman
+Copyright ⚇ 2014 Vojtěch Toman
 
 Distributed under the Eclipse Public License version 1.0.
