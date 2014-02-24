@@ -566,6 +566,36 @@
 
 
 ;;;
+;;; AST processing phase: registering of step names
+
+(defn- add-step-name-unchecked
+  [state sname]
+  (update-in state [:in-scope-step-names] #(conj % sname)))
+
+(defn- add-step-name
+  [state node]
+  (let [sname (step-name node)]
+    (if (get-in state [:in-scope-step-names sname])
+      (err-XS0002)
+      (add-step-name-unchecked state sname))))
+
+(defmulti e-step-names node-hierarchy-type :hierarchy #'node-hierarchy)
+
+(defmethod e-step-names ::step
+  [state node]
+  (let [sname (step-name node)
+        steps (cfilter step? node)
+        new-state (-> state
+                      (add-step-name-unchecked sname)
+                      ((partial reduce add-step-name) steps))]
+    {:state new-state
+     :node node}))
+
+(defmethod e-step-names :default
+  [state node]
+  (e-noop state node))
+
+;;;
 ;;; AST processing phase: discovery of local step declarations
 
 (defmulti e-local-step-declarations node-hierarchy-type :hierarchy #'node-hierarchy)
@@ -628,10 +658,12 @@
   (let [pre-editors [e-use-when            ;process use-when
                      e-eliminate-dead-code ;eliminate dead code
                      e-imports             ;resolve imports
+                     e-step-names
                      e-local-step-declarations ;proces local step declarations
                      e-enter-step]
         post-editors [e-leave-step]
         initial-state {:in-scope-types stdlib
+                       :in-scope-step-names #{}
                        :default-readable-port nil}]
     (ast-edit ast initial-state pre-editors post-editors)))
 
