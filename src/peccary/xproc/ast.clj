@@ -187,43 +187,7 @@
             (if-let [parent (zip/up eloc)]
               (recur parent (rest stack) :next) ;go up
               (zip/node eloc))           ;no parent -> we are done
-            (recur next stack :down)))))))
-
-(defn ast-edit2
-  [ast & [initial-state pre-editors post-editors]]
-  (let [z (make-ast-zipper ast)]
-    (loop [loc z
-           stack (list initial-state)
-           dir :down
-           prev-dir :down]
-       ;; (prn "AAA" dir (:type (zip/node loc)) (first stack))
-      (if (= :down dir)
-        ;; :down -> apply pre-editors and descend
-        (let [state (first stack)
-              ectx (apply-editors loc state pre-editors)
-              eloc (:loc ectx)
-              estate (:state ectx)
-              down (zip/down eloc)
-              ;; collapse the stack if moving laterally (from preceding sibling)
-              new-stack (if (= :next prev-dir)
-                          (cons estate (rest stack))
-                          (cons estate stack))]
-          ;; recur with the first child if available, otherwise with the next sibling
-          (if (nil? down)
-            (recur eloc new-stack :next dir)
-            (recur down new-stack :down dir)))
-        ;; :next -> apply the post editors, then proceed with the next sibling
-        (let [state (first stack)
-              ectx (apply-editors loc state post-editors)
-              eloc (:loc ectx)
-              estate (:state ectx)
-              next (zip/right eloc)]
-          ;; recur with next sibling if available, otherwise go up
-          (if (nil? next)
-            (if-let [parent (zip/up eloc)]
-              (recur parent (rest stack) :next dir) ;go up
-              (zip/node eloc))           ;no parent -> we are done
-            (recur next (cons estate (rest stack)) :down dir)))))))
+            (recur next (cons estate (rest stack)) :down)))))))
 
 (defn- e-noop
   "A no-op AST editor"
@@ -466,7 +430,6 @@
   (if (primary-port? port)
     (if-let [rp (make-readable-port last-step primary-output-port)]
       (do
-        (prn "TTT" port)
         (cassoc port (make-pipe rp)))
       (err-XS0006))
     (cassoc port (make-empty))))
@@ -500,21 +463,6 @@
               all-ports)
       true)))
 
-(defn- add-in-scope-step-name
-  [state sname]
-  (if sname
-    (if (get-in state [:in-scope-step-names sname])
-      (err-XS0002)
-      (update-in state [:in-scope-step-names] #(conj % sname)))
-    state))
-
-(defn- step-enter
-  [state node]
-  (let [sname (step-name node)
-        new-state (add-in-scope-step-name state sname)]
-    {:state new-state
-     :node node}))
-
 (defn- pipeline-enter
   [state node]
   (do (check-ports node)
@@ -523,7 +471,8 @@
             new-state (-> state
                           (assoc :default-readable-port drp)
                           (assoc :default-readable-parameter-port parameter-drp))]
-        (step-enter new-state node))))
+        {:state new-state
+         :node node})))
 
 (defmulti e-enter-step node-hierarchy-type :hierarchy #'node-hierarchy)
 
@@ -553,7 +502,8 @@
       (let [signature (:signature type)
             node-with-all-ports (add-unspecified-ports node signature)
             new-node (connect-input-ports state node-with-all-ports)]
-        (step-enter state new-node))
+        {:state state
+         :node new-node})
       (err-XS0044))))
 
 (defmethod e-enter-step :default
@@ -618,26 +568,33 @@
 ;;;
 ;;; AST processing phase: registering of step names
 
-(defn- add-step-name-unchecked
-  [state sname]
-  (update-in state [:in-scope-step-names] #(conj % sname)))
-
 (defn- add-step-name
   [state node]
   (let [sname (step-name node)]
     (if (get-in state [:in-scope-step-names sname])
       (err-XS0002)
-      (add-step-name-unchecked state sname))))
+      (update-in state [:in-scope-step-names] #(conj % sname)))))
+
+(defn- add-nested-step-names
+  [state node]
+  (let [steps (cfilter step? node)]
+    (reduce add-step-name state steps)))
 
 (defmulti e-step-names node-hierarchy-type :hierarchy #'node-hierarchy)
 
-(defmethod e-step-names ::step
+(defmethod e-step-names ::declare-step
   [state node]
   (let [sname (step-name node)
         steps (cfilter step? node)
         new-state (-> state
-                      (add-step-name-unchecked sname)
-                      ((partial reduce add-step-name) steps))]
+                      (assoc :in-scope-step-names #{sname})
+                      (add-nested-step-names node))]
+    {:state new-state
+     :node node}))
+
+(defmethod e-step-names ::step
+  [state node]
+  (let [new-state (add-nested-step-names state node)]
     {:state new-state
      :node node}))
 

@@ -8,30 +8,50 @@
 
 (def identity-file "test/data/identity.xpl")
 (def identity-str (slurp identity-file))
-(def identity-ast {:type :pipeline,
-                   :attrs {(qn "version") "1.0"}
+;; (def identity-ast {:type :pipeline
+;;                    :attrs {(qn "version") "1.0"}
+;;                    :extension-attrs {}
+;;                    :content [{:type :step
+;;                               :step-type (qn "identity" "http://www.w3.org/ns/xproc")
+;;                               :content [] :attrs {} :extension-attrs {} }]})
+
+(def identity-ast {:type :pipeline
+        :attrs {(qn "version") "1.0"}
+        :extension-attrs {}
+        :ctx {:posname "!1"
+              :location {:offset 103 :column 64 :line 3 :resource nil}
+              :base-uri nil
+              :ns-context {"p" "http://www.w3.org/ns/xproc"}}
+        :content [{:step-type (qn "identity" "http://www.w3.org/ns/xproc")
+                   :type :step
+                   :content []
+                   :attrs {}
                    :extension-attrs {}
-                   :content [{:type :step
-                              :step-type (qn "identity" "http://www.w3.org/ns/xproc")
-                              :content [] :attrs {} :extension-attrs {} }]})
+                   :ctx {:posname "!1.1"
+                         :location {:offset 119 :column 16 :line 4 :resource nil}
+                         :base-uri nil
+                         :ns-context {"p" "http://www.w3.org/ns/xproc"}}}]})
 
 (def identity-ast-processed
-  {:type :pipeline
+  {:in-scope-types
+   {(qn "identity" "http://www.w3.org/ns/xproc")
+    {:name
+     (qn "identity" "http://www.w3.org/ns/xproc")
+     :signature
+     {:content [{:type :input
+                 :attrs {(qn "port") "source"
+                         (qn "kind") "document"
+                         (qn "sequence") "true"
+                         (qn "primary") "true"}}
+                {:type :output
+                 :attrs {(qn "port") "result"
+                         (qn "kind") nil
+                         (qn "sequence") "true"
+                         (qn "primary") "true"}}]}
+     :body 1}}
+   :type :pipeline
    :attrs {(qn "version") "1.0"}
    :extension-attrs {}
-   :in-scope-types {(qn "identity" "http://www.w3.org/ns/xproc")
-                    {:name (qn "identity" "http://www.w3.org/ns/xproc")
-                     :signature {:content [{:type :input
-                                            :attrs {(qn "port") "source"
-                                                    (qn "kind") "document"
-                                                    (qn "sequence") "true"
-                                                    (qn "primary") "true"}}
-                                           {:type :output
-                                            :attrs {(qn "port") "result"
-                                                    (qn "kind") nil
-                                                    (qn "sequence") "true"
-                                                    (qn "primary") "true"}}]}
-                     :body 1}}
    :content [{:type :input
               :attrs {(qn "port") "source"
                       (qn "kind") "document"
@@ -67,6 +87,7 @@
                                  (qn "kind") nil
                                  (qn "sequence") "true"
                                  (qn "primary") "true"}}]}]})
+
 
 (defn parse-file
   [file]
@@ -145,22 +166,22 @@
 
 ;;; 
 
-(defmacro xproc-error-thrown?
+(defmacro thrown-xproc-error?
   [exp-code body]
   `(try
-    (do
-      ~body
-      false)
-    (catch clojure.lang.ExceptionInfo e# (let [xdata# (ex-data e#)
-                                               type# (:type xdata#)
-                                               code# (:code xdata#)]
-                                           (and (= :xproc-exception type#)
-                                                (= (xprocv/xproc-error-qn ~exp-code) code#))))))
+     (do
+       ~body
+       false)
+     (catch clojure.lang.ExceptionInfo e# (let [xdata# (ex-data e#)
+                                                type# (:type xdata#)
+                                                code# (:code xdata#)]
+                                            (and (= :xproc-exception type#)
+                                                 (= (xprocv/xproc-error-qn ~exp-code) code#))))))
 
 
 (deftest static-errors
   (testing "Multiple steps with the same name in the same scope"
-    (are [str] (xproc-error-thrown? "XS0002" (let [ast (str-ast str)]
+    (are [str] (thrown-xproc-error? "XS0002" (let [ast (str-ast str)]
                                                (xprocast/process-ast ast)))
          "<p:pipeline xmlns:p='http://www.w3.org/ns/xproc' version='1.0'>
             <p:identity name='dup'/>
