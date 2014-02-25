@@ -61,12 +61,13 @@
 
 (defn- cmap
   [pred? f node]
-  (let [content (content node)]
-    (map (fn [n]
-           (if (pred? n)
-             (f n)
-             n))
-         content)))
+  (let [content (content node)
+        new-content (map (fn [n]
+                           (if (pred? n)
+                             (f n)
+                             n))
+                         content)]
+    (cassoc node new-content)))
 
 (defn- cgroup-by
   [f node]
@@ -384,7 +385,7 @@
 
 (defn- add-unspecified-ports
   "Creates a new step node by adding all unspecified ports from signature to step-node"
-  [node signature]
+  [signature node]
   (let [node-ports (ports node)
         node-port-names (into #{} (map port-name node-ports))
         sig-ports (ports signature)
@@ -409,9 +410,7 @@
 
 (defn- connect-input-ports
   [state node]
-  (let [new-content (cmap input-port? (partial connect-input-port state) node)
-        new-node (cassoc node new-content)]
-    new-node))
+  (cmap input-port? (partial connect-input-port state) node))
 
 (defn- step?
   [node]
@@ -436,43 +435,65 @@
 
 (defn- connect-output-ports
   [node]
-  (let [last (last-step node)
-        new-content (cmap output-port? (partial connect-output-port last) node)
-        new-node (cassoc node new-content)]
-    new-node))
+  (let [last (last-step node)]
+    (cmap output-port? (partial connect-output-port last) node)))
 
-(defn- check-ports
+(defn- port-stat-type
+  [p]
+  (cond (parameter-input-port? p) :i
+        (output-port? p) :o
+        :else :p))
+
+(defn- port-stats
   [node]
-  (let [all-ports (ports node)]
-    (do
-      ;; first detect duplicate port names
-      (reduce (fn [m n]
-                (let [pname (port-name n)]
-                  (if (contains? m pname)
-                    (err-XS0011)
-                    (assoc m pname n))))
-              {}
-              all-ports)
-      ;; then check that for each port type, there is at most one port declared as primary="true"
-      (reduce (fn [s n] (when (primary-port? n)
-                          (let [kind (port-kind n)]
-                            (if (s kind) ;there already is a primary port of given kind
-                              (err-XS0030)
-                              (conj s kind)))))
-              #{}
-              all-ports)
-      true)))
+  (let [all-ports (ports node)
+        init-stats {:names #{} :i 0 :p 0 :o 0 :primaries #{}}]
+    (reduce (fn make-port-ctx [stats p]
+              (let [name (port-name p)]
+                (if (get-in stats [:names name])
+                  ;; port with the same name exists
+                  (err-XS0011)
+                  (let [type (port-stat-type p)
+                        primary (primary-port? p)]
+                    (if (and primary
+                             (get-in stats [:primaries type]))
+                      ;; primary port of the same type already exists
+                      (err-XS0030)
+                      (-> stats
+                          (update-in [:names] #(conj % name))
+                          (update-in [type] inc)
+                          (update-in [:primaries] #(when primary (conj % type)))))))))
+            init-stats all-ports)))
+
+(defn- process-ports
+  [node]
+  ;; 1. For each port category, check that:
+  ;;    a) there are no duplicate names
+  ;;    b) there is at most one port marked as primary
+  ;; 2. For each category:
+  ;;    a) if there is only one port (not marked as primary="false"), mark it as primary
+  (let [stats (port-stats node)
+        new-node (cmap port? (fn [p]
+                               (let [type (port-stat-type p)]
+                                 (if (or (not= 1 (get stats type))
+                                         (false? (primary-port? p)))
+                                   ;; not the only port if its type (or explicitly set as primary='false')
+                                   p
+                                   ;; otherwise mark as primary
+                                   (assoc-in p [:attrs qn-a-primary] "true"))))
+                       node)]
+    new-node))
 
 (defn- pipeline-enter
   [state node]
-  (do (check-ports node)
-      (let [drp (make-readable-port node primary-document-input-port)
-            parameter-drp (make-readable-port node primary-parameter-input-port)
-            new-state (-> state
-                          (assoc :default-readable-port drp)
-                          (assoc :default-readable-parameter-port parameter-drp))]
-        {:state new-state
-         :node node})))
+  (let [node-pp (process-ports node)
+        drp (make-readable-port node-pp primary-document-input-port)
+        parameter-drp (make-readable-port node-pp primary-parameter-input-port)
+        new-state (-> state
+                      (assoc :default-readable-port drp)
+                      (assoc :default-readable-parameter-port parameter-drp))]
+    {:state new-state
+     :node node-pp}))
 
 (defmulti e-enter-step node-hierarchy-type :hierarchy #'node-hierarchy)
 
@@ -481,13 +502,16 @@
   (let [source (make-port port-source :input
                           {qn-a-kind port-kind-document
                            qn-a-sequence "true"
-                           qn-a-primary "true"})
+                           ;; qn-a-primary "true"
+                           })
         parameters (make-port port-parameters :input
                               {qn-a-kind port-kind-parameter
                                qn-a-sequence "true"
-                               qn-a-primary "true"})
+                               ;; qn-a-primary "true"
+                               })
         result (make-port port-result :output {qn-a-sequence "true"
-                                               qn-a-primary "true"})
+                                               ;; qn-a-primary "true"
+                                               })
         new-node (cprepend node [source parameters result])]
     (pipeline-enter state new-node)))
 
@@ -500,8 +524,10 @@
   (let [type-name (atomic-step-type-name node)]
     (if-let [type (get-step-type state type-name)]
       (let [signature (:signature type)
-            node-with-all-ports (add-unspecified-ports node signature)
-            new-node (connect-input-ports state node-with-all-ports)]
+            new-node (->> node
+                          (add-unspecified-ports signature)
+                          process-ports
+                          (connect-input-ports state))]
         {:state state
          :node new-node})
       (err-XS0044))))
