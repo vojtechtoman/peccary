@@ -56,12 +56,13 @@
                                   (:attrs selt))
           regular-attrs (into {} (:regular attrs-grouped))
           extension-attrs (into {} (:extension attrs-grouped))
-          loc (:location selt)]
+          loc (:location selt)
+          posname (:posname selt)]
       {:type type
        :content content
        :attrs regular-attrs
        :extension-attrs extension-attrs
-       :ctx (assoc ctx :location loc)})))
+       :ctx (assoc ctx :location loc :posname posname)})))
 
 (defmacro defxprocelt
   [var {qname :qname attrs :attrs model-rf :model type :type}]
@@ -358,3 +359,35 @@
                               (library-rf %))
                      ctx))
 
+(defn- xproc-pos
+  [s]
+  (->> s
+       reverse
+       (clojure.string/join ".")
+       (str "!")))
+
+(defn wrap
+  [evts & [s]]
+  (lazy-seq
+   (if-let [evt (first evts)]
+     (let [type (:type evt)]
+       (cond
+        (= :start-element type)
+        (let [head (first s)
+              ps (if (nil? head)
+                   '(1)
+                   (cons (inc head) (rest s)))
+              xpos (xproc-pos ps)
+              ns (cons 0 ps)
+              decorated (assoc evt :posname xpos)]
+          (cons decorated (wrap (rest evts) ns)))
+        (= :end-element type)
+        (cons evt (wrap (rest evts) (rest s)))
+        
+        :else
+        (cons evt (wrap (rest evts) s))))
+     ())))
+
+(defn parse
+  [rf evts & [ctx]]
+  (xmlast/parse rf (wrap evts) ctx))

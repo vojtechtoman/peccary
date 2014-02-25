@@ -14,7 +14,7 @@
         cause# (gensym "cause")
         args# (gensym "args")]
     `(defn ~var [& [~cause# ~args#]]
-       (throw (ex-info (str ~code ": " ~message) {:type ~qname :message ~message :args ~args#} ~cause#)))))
+       (throw (ex-info (str ~code ": " ~message) {:type :xproc-exception :code ~qname :message ~message :args ~args#} ~cause#)))))
 
 ;; static errors
 

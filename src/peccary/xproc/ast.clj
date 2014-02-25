@@ -120,8 +120,8 @@
 (defn- step-name
   [node]
   (when (node-hierarchy-type? node ::step)
-    (or (get-attr node qn-a-name) "STEP TODO") ;TODO
-    ))
+    (or (get-attr node qn-a-name)
+        (-> node :ctx :posname))))
 
 (defn- atomic-step-type-name
   [node]
@@ -188,6 +188,42 @@
               (recur parent (rest stack) :next) ;go up
               (zip/node eloc))           ;no parent -> we are done
             (recur next stack :down)))))))
+
+(defn ast-edit2
+  [ast & [initial-state pre-editors post-editors]]
+  (let [z (make-ast-zipper ast)]
+    (loop [loc z
+           stack (list initial-state)
+           dir :down
+           prev-dir :down]
+       ;; (prn "AAA" dir (:type (zip/node loc)) (first stack))
+      (if (= :down dir)
+        ;; :down -> apply pre-editors and descend
+        (let [state (first stack)
+              ectx (apply-editors loc state pre-editors)
+              eloc (:loc ectx)
+              estate (:state ectx)
+              down (zip/down eloc)
+              ;; collapse the stack if moving laterally (from preceding sibling)
+              new-stack (if (= :next prev-dir)
+                          (cons estate (rest stack))
+                          (cons estate stack))]
+          ;; recur with the first child if available, otherwise with the next sibling
+          (if (nil? down)
+            (recur eloc new-stack :next dir)
+            (recur down new-stack :down dir)))
+        ;; :next -> apply the post editors, then proceed with the next sibling
+        (let [state (first stack)
+              ectx (apply-editors loc state post-editors)
+              eloc (:loc ectx)
+              estate (:state ectx)
+              next (zip/right eloc)]
+          ;; recur with next sibling if available, otherwise go up
+          (if (nil? next)
+            (if-let [parent (zip/up eloc)]
+              (recur parent (rest stack) :next dir) ;go up
+              (zip/node eloc))           ;no parent -> we are done
+            (recur next (cons estate (rest stack)) :down dir)))))))
 
 (defn- e-noop
   "A no-op AST editor"
@@ -382,62 +418,8 @@
 ;;; 
 ;;; AST processing phase: insertion of default input ports
 
-(defn- check-ports
-  [node]
-  (let [all-ports (ports node)]
-    (do
-      ;; first detect duplicate port names
-      (reduce (fn [m n]
-                (let [pname (port-name n)]
-                  (if (contains? m pname)
-                    (err-XS0011)
-                    (assoc m pname n))))
-              {}
-              all-ports)
-      ;; then check that for each port type, there is at most one port declared as primary="true"
-      (reduce (fn [s n] (when (primary-port? n)
-                          (let [kind (port-kind n)]
-                            (if (s kind) ;there already is a primary port of given kind
-                              (err-XS0030)
-                              (conj s kind)))))
-              #{}
-              all-ports)
-      true)))
-
-(defn- pipeline-check-and-set-internal-readable-ports
-  [state node]
-  (do (check-ports node)
-      (let [drp (make-readable-port node primary-document-input-port)
-            parameter-drp (make-readable-port node primary-parameter-input-port)
-            new-state (-> state
-                          (assoc :default-readable-port drp)
-                          (assoc :default-readable-parameter-port parameter-drp))]
-        {:state new-state
-         :node node})))
-
-(defmulti e-enter-step node-hierarchy-type :hierarchy #'node-hierarchy)
-
-(defmethod e-enter-step ::pipeline
-  [state node]
-  (let [source (make-port port-source :input
-                          {qn-a-kind port-kind-document
-                           qn-a-sequence "true"
-                           qn-a-primary "true"})
-        parameters (make-port port-parameters :input
-                              {qn-a-kind port-kind-parameter
-                               qn-a-sequence "true"
-                               qn-a-primary "true"})
-        result (make-port port-result :output {qn-a-sequence "true"
-                                               qn-a-primary "true"})
-        new-node (cprepend node [source parameters result])]
-    (pipeline-check-and-set-internal-readable-ports state new-node)))
-
-(defmethod e-enter-step ::declare-step
-  [state node]
-  (pipeline-check-and-set-internal-readable-ports state node))
-
-(defn add-unspecified-ports
-  "Creates a new step node by adding all unspecified ports to step-node"
+(defn- add-unspecified-ports
+  "Creates a new step node by adding all unspecified ports from signature to step-node"
   [node signature]
   (let [node-ports (ports node)
         node-port-names (into #{} (map port-name node-ports))
@@ -483,7 +465,9 @@
   [last-step port]
   (if (primary-port? port)
     (if-let [rp (make-readable-port last-step primary-output-port)]
-      (cassoc port (make-pipe rp))
+      (do
+        (prn "TTT" port)
+        (cassoc port (make-pipe rp)))
       (err-XS0006))
     (cassoc port (make-empty))))
 
@@ -494,6 +478,73 @@
         new-node (cassoc node new-content)]
     new-node))
 
+(defn- check-ports
+  [node]
+  (let [all-ports (ports node)]
+    (do
+      ;; first detect duplicate port names
+      (reduce (fn [m n]
+                (let [pname (port-name n)]
+                  (if (contains? m pname)
+                    (err-XS0011)
+                    (assoc m pname n))))
+              {}
+              all-ports)
+      ;; then check that for each port type, there is at most one port declared as primary="true"
+      (reduce (fn [s n] (when (primary-port? n)
+                          (let [kind (port-kind n)]
+                            (if (s kind) ;there already is a primary port of given kind
+                              (err-XS0030)
+                              (conj s kind)))))
+              #{}
+              all-ports)
+      true)))
+
+(defn- add-in-scope-step-name
+  [state sname]
+  (if sname
+    (if (get-in state [:in-scope-step-names sname])
+      (err-XS0002)
+      (update-in state [:in-scope-step-names] #(conj % sname)))
+    state))
+
+(defn- step-enter
+  [state node]
+  (let [sname (step-name node)
+        new-state (add-in-scope-step-name state sname)]
+    {:state new-state
+     :node node}))
+
+(defn- pipeline-enter
+  [state node]
+  (do (check-ports node)
+      (let [drp (make-readable-port node primary-document-input-port)
+            parameter-drp (make-readable-port node primary-parameter-input-port)
+            new-state (-> state
+                          (assoc :default-readable-port drp)
+                          (assoc :default-readable-parameter-port parameter-drp))]
+        (step-enter new-state node))))
+
+(defmulti e-enter-step node-hierarchy-type :hierarchy #'node-hierarchy)
+
+(defmethod e-enter-step ::pipeline
+  [state node]
+  (let [source (make-port port-source :input
+                          {qn-a-kind port-kind-document
+                           qn-a-sequence "true"
+                           qn-a-primary "true"})
+        parameters (make-port port-parameters :input
+                              {qn-a-kind port-kind-parameter
+                               qn-a-sequence "true"
+                               qn-a-primary "true"})
+        result (make-port port-result :output {qn-a-sequence "true"
+                                               qn-a-primary "true"})
+        new-node (cprepend node [source parameters result])]
+    (pipeline-enter state new-node)))
+
+(defmethod e-enter-step ::declare-step
+  [state node]
+  (pipeline-enter state node))
 
 (defmethod e-enter-step ::atomic-step
   [state node]
@@ -502,8 +553,7 @@
       (let [signature (:signature type)
             node-with-all-ports (add-unspecified-ports node signature)
             new-node (connect-input-ports state node-with-all-ports)]
-        {:state state
-         :node new-node})
+        (step-enter state new-node))
       (err-XS0044))))
 
 (defmethod e-enter-step :default
@@ -632,6 +682,7 @@
                      e-enter-step]
         post-editors [e-leave-step]
         initial-state {:in-scope-types stdlib
+                       :in-scope-step-names #{}
                        :default-readable-port nil}]
     (ast-edit ast initial-state pre-editors post-editors)))
 

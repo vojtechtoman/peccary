@@ -2,9 +2,9 @@
   (:require [clojure.test :refer :all]
             [peccary.xml :refer :all]
             [peccary.xml.parse :as xmlparse]
-            [peccary.xml.ast :as xmlast]
             [peccary.xproc.ast :as xprocast]
-            [peccary.xproc.grammar :as xprocg]))
+            [peccary.xproc.grammar :as xprocg]
+            [peccary.xproc.vocabulary :as xprocv]))
 
 (def identity-file "test/data/identity.xpl")
 (def identity-str (slurp identity-file))
@@ -48,7 +48,7 @@
                       (qn "sequence") "true"
                       (qn "primary") "true"}
               :content [{:type :pipe
-                         :attrs {(qn "step") "STEP TODO"
+                         :attrs {(qn "step") "!1.1"
                                  (qn "port") "result"}}]}
              {:type :step
               :step-type (qn "identity" "http://www.w3.org/ns/xproc")
@@ -60,7 +60,7 @@
                                  (qn "sequence") "true"
                                  (qn "primary") "true"}
                          :content [{:type :pipe
-                                    :attrs {(qn "step") "STEP TODO"
+                                    :attrs {(qn "step") "!1"
                                             (qn "port") "source"}}]}
                         {:type :output
                          :attrs {(qn "port") "result"
@@ -98,7 +98,7 @@
 
 (defn make-ast
   [evts]
-  (xmlast/parse xprocg/main-pipeline-rf evts))
+  (xprocg/parse xprocg/main-pipeline-rf evts))
 
 (defn- file-ast
   [file]
@@ -126,11 +126,10 @@
     (is (nil? (str-ast "<p:pipeline xmlns:p='http://www.w3.org/ns/xproc' version='1.0'/>")))))
 
 (deftest basic-ast-construction
-  (deftest file-and-str-ast-identical
-    (testing "The results are the same if we parse a file or a string"
-      (are [ast] (ast-eq ast identity-ast)
-           (file-ast identity-file)
-           (str-ast identity-str))))
+  (testing "The results are the same if we parse a file or a string"
+    (are [ast] (ast-eq ast identity-ast)
+         (file-ast identity-file)
+         (str-ast identity-str)))
   
   (deftest ignorable-content-gets-ignored
     (testing "Ignorable really does get ignored"
@@ -141,6 +140,36 @@
 ;;; 
 
 (deftest ast-manipulations
-  (deftest identity-processing
-    (testing "AST processing of the identity pipeline"
-      (is (ast-eq (xprocast/process-ast identity-ast) identity-ast-processed)))))
+  (testing "AST processing of the identity pipeline"
+    (is (ast-eq (xprocast/process-ast identity-ast) identity-ast-processed))))
+
+;;; 
+
+(defmacro xproc-error-thrown?
+  [exp-code body]
+  `(try
+    (do
+      ~body
+      false)
+    (catch clojure.lang.ExceptionInfo e# (let [xdata# (ex-data e#)
+                                               type# (:type xdata#)
+                                               code# (:code xdata#)]
+                                           (and (= :xproc-exception type#)
+                                                (= (xprocv/xproc-error-qn ~exp-code) code#))))))
+
+
+(deftest static-errors
+  (testing "Multiple steps with the same name in the same scope"
+    (are [str] (xproc-error-thrown? "XS0002" (let [ast (str-ast str)]
+                                               (xprocast/process-ast ast)))
+         "<p:pipeline xmlns:p='http://www.w3.org/ns/xproc' version='1.0'>
+            <p:identity name='dup'/>
+            <p:identity name='dup'/>
+          </p:pipeline>"
+
+         "<p:pipeline name='dup' xmlns:p='http://www.w3.org/ns/xproc' version='1.0'>
+            <p:identity name='dup'/>
+          </p:pipeline>"
+         )))
+
+
