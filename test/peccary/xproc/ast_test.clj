@@ -35,7 +35,7 @@
 (def identity-ast-processed
   {:in-scope-types
    {(qn "identity" "http://www.w3.org/ns/xproc")
-    {:name
+    {:type
      (qn "identity" "http://www.w3.org/ns/xproc")
      :signature
      {:content [{:type :input

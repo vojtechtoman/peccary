@@ -131,9 +131,27 @@
   [val]
   val)
 
-(defn as-qname                          ;TODO
+(defn- parse-qname                      ;TODO this is way too simplistic
   [val]
-  val)
+  (if (empty? val)
+    (throw (IllegalArgumentException.))                             ;TODO parse error
+    (let [parts (clojure.string/split val #":" 2)]
+      (if (= 1 (count parts))
+        {:local val}
+        {:prefix (first parts)
+         :local (second parts)}))))
+
+(defn as-qname                          ;TODO
+  "returns nil if val is nil"
+  [val ns-context]
+  (when val
+    (let [parsed (parse-qname val)
+          prefix (:prefix parsed)
+          local (:local parsed)
+          ns (when prefix
+               (or (get ns-context prefix)
+                   (throw (IllegalArgumentException.))))]
+        (qn local ns prefix))))
 
 (defn as-uri                            ;TODO
   [val]
