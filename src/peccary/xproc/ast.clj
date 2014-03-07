@@ -3,6 +3,7 @@
   (:require [clojure.java.io :refer :all]
             [clojure.zip :as zip]
             [peccary.util :as util]
+            [peccary.xml :refer :all]
             [peccary.xml.ast :as xmlast]
             [peccary.xml.parse :as xmlparse]
             [peccary.xproc.error :refer :all]
@@ -113,9 +114,13 @@
   ([state node]                         ;when used as the editor dispatch fn
      (node-hierarchy-type node)))
 
+(defn- attrs
+  [node]
+  :attrs node)
+
 (defn- get-attr
   [node attr]
-  (-> node :attrs (get attr)))
+  (-> node attrs (get attr)))
 
 (defn- node-name
   [node]
@@ -581,17 +586,57 @@
   ;; TODO only check for duplicates, do not check the complete port declarations!
   (declare-step-process-ports node))
 
-(defn- atomic-step-process-options
+(defn- option-declared?
+  [opt-name signature]
+  (let [opts (options signature)]
+    (some (fn [n]
+            (= opt-name (node-name n)))
+          opts)))
+
+(defn- make-static-with-option
+  ([opt-name val]
+     ;; TODO use node location here for better error reporting
+     {:type :with-option
+      :attrs {qn-a-name opt-name
+              qn-a-select (str \' val \')}
+      :content [(make-empty)]}))
+
+(defn- shortcut-options
+  [node]
+  (let [attrs (attrs node)]
+    (into {} (filter (fn [[qname val]]
+                       (and (not= qn-a-name qname)
+                            (nil? (ns-uri qname))))
+                     attrs))))
+
+(defn- merge-shortcut-options
+  [node]
+  (let [long-opts (options node)
+        long-opt-names (into #{} (map (fn [n] (node-name n))
+                                      long-opts))
+        shortcut-opts (shortcut-options node)]
+    (reduce (fn [n [opt-name val]]
+              (if (contains? long-opt-names opt-name)
+                (err-XS0027)            ;both long-form and short-form
+                (let [as-long (make-static-with-option opt-name val)]
+                  (cprepend n as-long))))
+            node
+            shortcut-opts)))
+
+(defn- check-options                    ;note: checks only long-form options
   [signature node]
   ;; TODO err-XS0018 - invoking a step without specifying required option
-  ;; TODO err-XS0027 - specified both shortcut and long
   ;; TODO err-XS0031 - option that is not declared
+  ;; - ?? add missing options (taking what is needed from the signature)
+  ;; - check for duplicates
+  (let [opts (options node)]
+    node))
 
-  ;; 1. convert all short-hand options to full options
-  ;; ?? (2. add missing options (taking what is needed from the signature))
-  ;; 3. check for duplicates
-  ;; 4. check for unknown options
-  node)
+(defn- atomic-step-process-options
+  [signature node]
+  (-> node
+      merge-shortcut-options
+      (check-options signature)))
 
 (defn- connect-input-port
   [state port]
