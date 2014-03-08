@@ -116,7 +116,7 @@
 
 (defn- attrs
   [node]
-  :attrs node)
+  (:attrs node))
 
 (defn- get-attr
   [node attr]
@@ -134,6 +134,10 @@
   [node]
   {:pre [(not (nil? (:ctx node)))]}
   (:ctx node))
+
+(defn- location
+  [node]
+  (-> node parse-context :location))
 
 (defn- ns-context
   [node]
@@ -594,12 +598,12 @@
           opts)))
 
 (defn- make-static-with-option
-  ([opt-name val]
-     ;; TODO use node location here for better error reporting
+  ([opt-name val & [parse-ctx]]
      {:type :with-option
       :attrs {qn-a-name opt-name
               qn-a-select (str \' val \')}
-      :content [(make-empty)]}))
+      :content [(make-empty)]
+      :ctx parse-ctx}))
 
 (defn- shortcut-options
   [node]
@@ -611,17 +615,20 @@
 
 (defn- merge-shortcut-options
   [node]
-  (let [long-opts (options node)
+  (let [short-opts (shortcut-options node)
+        long-opts (options node)
         long-opt-names (into #{} (map (fn [n] (node-name n))
-                                      long-opts))
-        shortcut-opts (shortcut-options node)]
-    (reduce (fn [n [opt-name val]]
-              (if (contains? long-opt-names opt-name)
-                (err-XS0027)            ;both long-form and short-form
-                (let [as-long (make-static-with-option opt-name val)]
-                  (cprepend n as-long))))
-            node
-            shortcut-opts)))
+                                      long-opts))]
+    (loop [n node
+           so short-opts]
+      (if-let [[opt val] (first so)]
+        (if (contains? long-opt-names opt)
+          (err-XS0027)                  ;specified both in short and long form
+          (let [long-form (make-static-with-option opt val (parse-context n))
+                new-node (cprepend n long-form)]
+            (recur new-node (rest so))))
+        n)))
+)
 
 (defn- check-options                    ;note: checks only long-form options
   [signature node]
@@ -634,7 +641,7 @@
 
 (defn- atomic-step-process-options
   [signature node]
-  (-> node
+  (->> node
       merge-shortcut-options
       (check-options signature)))
 

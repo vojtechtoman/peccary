@@ -125,7 +125,7 @@
   [file]
   (-> file parse-file make-ast))
 
-(defn- str-ast
+(defn str-ast
   [s]
   (-> s parse-str make-ast))
 
