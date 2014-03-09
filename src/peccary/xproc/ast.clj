@@ -601,7 +601,7 @@
   ([opt-name val & [parse-ctx]]
      {:type :with-option
       :attrs {qn-a-name opt-name
-              qn-a-select (str \' val \')}
+              qn-a-select (str \' val \')} ;TODO use proper XPath escaping/wrapping!
       :content [(make-empty)]
       :ctx parse-ctx}))
 
@@ -618,17 +618,15 @@
   (let [short-opts (shortcut-options node)
         long-opts (options node)
         long-opt-names (into #{} (map (fn [n] (node-name n))
-                                      long-opts))]
-    (loop [n node
-           so short-opts]
-      (if-let [[opt val] (first so)]
-        (if (contains? long-opt-names opt)
-          (err-XS0027)                  ;specified both in short and long form
-          (let [long-form (make-static-with-option opt val (parse-context n))
-                new-node (cprepend n long-form)]
-            (recur new-node (rest so))))
-        n)))
-)
+                                      long-opts))
+        parse-ctx (parse-context node)]
+
+    (reduce (fn merge-shortcut-opt [node [opt-name val]]
+              (if (contains? long-opt-names opt-name)
+                (err-XS0027)    ;specified both in short and long form
+                (let [long-form (make-static-with-option opt-name val parse-ctx)]
+                  (cprepend node long-form))))
+            node short-opts)))
 
 (defn- check-options                    ;note: checks only long-form options
   [signature node]
