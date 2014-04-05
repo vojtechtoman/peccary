@@ -27,6 +27,8 @@
 ;;; some useful constants
 (def ^:const ns-xml XMLConstants/XML_NS_URI)
 (def ^:const qn-xml-base (qn "base" ns-xml))
+(def ^:const qn-xml-id (qn "id" ns-xml))
+(def ^:const qn-xml-lang (qn "lang" ns-xml))
 
 (def ^:const ns-xmlns XMLConstants/XMLNS_ATTRIBUTE_NS_URI)
 (def ^:const qn-xmlns (qn XMLConstants/XMLNS_ATTRIBUTE ns-xmlns))

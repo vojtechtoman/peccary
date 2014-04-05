@@ -1,7 +1,6 @@
 (ns peccary.xproc.ast
   (:gen-class)
   (:require [clojure.java.io :refer :all]
-            [clojure.zip :as zip]
             [peccary.util :as util]
             [peccary.xml :refer :all]
             [peccary.xml.ast :as xmlast]
@@ -45,55 +44,6 @@
 
 ))
 
-;;; miscellaneous helper methods
-
-(defn- content
-  [node]
-  (:content node))
-
-(defn- cempty?
-  [node]
-  (empty? (content node)))
-
-(defn- cassoc
-  [node c]
-  (let [coll (if (sequential? c) c (list c))]
-    (assoc node :content coll)))
-
-(defn- cset
-  [node coll]
-  (cassoc node coll))
-
-(defn- cprepend
-  [node coll]
-  (let [content (content node)
-        new-content (concat coll content)]
-    (cset node new-content)))
-
-(defn- cmap
-  [pred? f node]
-  (let [content (content node)
-        new-content (map (fn [n]
-                           (if (pred? n)
-                             (f n)
-                             n))
-                         content)]
-    (cassoc node new-content)))
-
-(defn- cgroup-by
-  [f node]
-  (let [content (content node)]
-    (group-by f content)))
-
-(defn- cfilter
-  [pred? node]
-  (let [content (content node)]
-    (filter pred? content)))
-
-(defn- cremove
-  [pred? node]
-  (let [content (content node)]
-    (remove pred? content)))
 
 ;;; 
 
@@ -161,63 +111,6 @@
 
 
 ;;; AST traversal/editing
-
-(defn- make-ast-zipper
-  [ast]
-  (zip/zipper (fn [n]
-                (not (cempty? n)))
-              content
-              (fn [n c]
-                (cassoc n c))
-              ast))
-
-(defn- apply-editors
-  [loc state editors]
-  (let [node (zip/node loc)
-        ectx (reduce (fn [ctx editor]
-                       (let [state (:state ctx)
-                             node (:node ctx)]
-                         (merge {:state state
-                                 :node node}
-                                (editor state node))))
-                     {:state state
-                      :node node}
-                     editors)
-        estate (:state ectx)
-        enode (:node ectx)
-        eloc (zip/replace loc enode)]
-    {:loc eloc
-     :state estate}))
-
-(defn ast-edit
-  [ast & [initial-state pre-editors post-editors]]
-  (let [z (make-ast-zipper ast)]
-    (loop [loc z
-           stack (list initial-state)
-           dir :down]
-      (if (= :down dir)
-        ;; :down -> apply pre-editors and descend
-        (let [state (first stack)
-              ectx (apply-editors loc state pre-editors)
-              eloc (:loc ectx)
-              estate (:state ectx)
-              down (zip/down eloc)]
-          ;; recur with the first child if available, otherwise with the next sibling
-          (if (nil? down)
-            (recur eloc stack :next)
-            (recur down (cons estate stack) :down)))
-        ;; :next -> apply the post editors, then proceed with the next sibling
-        (let [state (first stack)
-              ectx (apply-editors loc state post-editors)
-              eloc (:loc ectx)
-              estate (:state ectx)
-              next (zip/right eloc)]
-          ;; recur with next sibling if available, otherwise go up
-          (if (nil? next)
-            (if-let [parent (zip/up eloc)]
-              (recur parent (rest stack) :next) ;go up
-              (zip/node eloc))           ;no parent -> we are done
-            (recur next (cons estate (rest stack)) :down)))))))
 
 (defn- e-noop
   "A no-op AST editor"
@@ -294,19 +187,19 @@
 
 (defn- ports
   [node]
-  (cfilter port? node))
+  (xmlast/cfilter port? node))
 
 (defn- document-input-ports
   [node]
-  (cfilter document-input-port? node))
+  (xmlast/cfilter document-input-port? node))
 
 (defn- parameter-input-ports
   [node]
-  (cfilter parameter-input-port? node))
+  (xmlast/cfilter parameter-input-port? node))
 
 (defn- output-ports
   [node]
-  (cfilter output-port? node))
+  (xmlast/cfilter output-port? node))
 
 (defn- select-primary-port
   "returns nil if there is no primary port among ports"
@@ -357,7 +250,7 @@
 
 (defn- bindings
   [node]
-  (cfilter binding? node))
+  (xmlast/cfilter binding? node))
 
 ;;; 
 
@@ -367,7 +260,7 @@
 
 (defn- options
   [node]
-  (cfilter option? node))
+  (xmlast/cfilter option? node))
 
 (defn- option-name
   [opt-node]
@@ -401,7 +294,7 @@
   [decl]
   (let [ns-ctx (ns-context decl)
         qname (attr-as-qname decl qn-a-type)
-        signature (make-step-signature (cfilter (some-fn port? option?)
+        signature (make-step-signature (xmlast/cfilter (some-fn port? option?)
                                                 decl))
         impl decl]
     {:type qname
@@ -462,21 +355,21 @@
             (if (step? n)
               n
               x))
-          (content node)))
+          (xmlast/content node)))
 
 (defn- connect-output-port
   [last-step port]
   (if (primary-port? port)
     (if-let [rp (make-readable-port last-step primary-output-port)]
       (do
-        (cassoc port (make-pipe rp)))
+        (xmlast/cassoc port (make-pipe rp)))
       (err-XS0006))
-    (cassoc port (make-empty))))
+    (xmlast/cassoc port (make-empty))))
 
 (defn- connect-output-ports
   [node]
   (let [last (last-step node)]
-    (cmap output-port? (partial connect-output-port last) node)))
+    (xmlast/cmap output-port? (partial connect-output-port last) node)))
 
 (defn- port-stat-type
   [p]
@@ -513,7 +406,7 @@
   ;; 2. For each category:
   ;;    a) if there is only one port (not marked as primary="false"), mark it as primary
   (let [stats (port-stats node)
-        new-node (cmap port? (fn [p]
+        new-node (xmlast/cmap port? (fn [p]
                                (let [type (port-stat-type p)]
                                  (if (or (not= 1 (get stats type))
                                          (false? (primary-port? p)))
@@ -566,7 +459,7 @@
                                qn-a-primary "true"})
         result (make-port port-result :output {qn-a-sequence "true"
                                                qn-a-primary "true"})
-        new-node (cprepend node [source parameters result])]
+        new-node (xmlast/cprepend node [source parameters result])]
     (pipeline-enter state new-node)))
 
 (defmethod e-enter ::declare-step
@@ -583,7 +476,7 @@
         missing (remove (fn [n]
                           (node-port-names (port-name n)))
                         sig-ports)]
-    (cprepend node missing)))
+    (xmlast/cprepend node missing)))
 
 (defn- atomic-step-process-ports
   [node]
@@ -625,7 +518,7 @@
               (if (contains? long-opt-names opt-name)
                 (err-XS0027)    ;specified both in short and long form
                 (let [long-form (make-static-with-option opt-name val parse-ctx)]
-                  (cprepend node long-form))))
+                  (xmlast/cprepend node long-form))))
             node short-opts)))
 
 (defn- check-options                    ;note: checks only long-form options
@@ -649,20 +542,20 @@
     (if (primary-port? port)
       (if (parameter-input-port? port)
         (if-let [drp (default-readable-parameter-port state)]
-          (cassoc port (make-pipe drp))
+          (xmlast/cassoc port (make-pipe drp))
           (err-XS0055))                   ;TODO check for p:with-param
         (if-let [drp (default-readable-port state)]
-          (cassoc port (make-pipe drp))
+          (xmlast/cassoc port (make-pipe drp))
           (err-XS0032)))
       (if (parameter-input-port? port)
-        (cassoc port (make-empty))
+        (xmlast/cassoc port (make-empty))
         (err-XS0003)))
     ;; there is a binding already
     port))
 
 (defn- connect-input-ports
   [state node]
-  (cmap input-port? (partial connect-input-port state) node))
+  (xmlast/cmap input-port? (partial connect-input-port state) node))
 
 (defmethod e-enter ::atomic-step
   [state node]
@@ -684,7 +577,7 @@
     (let [binding (if-let [drp (default-readable-port state)]
                     (make-pipe)
                     (make-empty))]
-      (cset node binding))    
+      (xmlast/cset node binding))    
     node))
 
 (defmethod e-enter :default
@@ -724,7 +617,7 @@
 (declare parse-import-target)
 (defmethod e-imports ::contains-imports
   [state node]
-  (let [imports-other (cgroup-by #(= :import (node-type %)) node)
+  (let [imports-other (xmlast/cgroup-by #(= :import (node-type %)) node)
         imports (imports-other true)
         other (imports-other false)
         ist (:in-scope-types state)
@@ -736,7 +629,7 @@
                           imports)
         new-state (assoc state :in-scope-types merged-st)
         new-node (-> node
-                     (cassoc other)
+                     (xmlast/cassoc other)
                      (assoc :in-scope-types merged-st))]
     {:state new-state
      :node new-node}))
@@ -758,7 +651,7 @@
 
 (defn- add-nested-step-names
   [state node]
-  (let [steps (cfilter step? node)]
+  (let [steps (xmlast/cfilter step? node)]
     (reduce add-step-name state steps)))
 
 (defmulti e-step-names node-hierarchy-type :hierarchy #'node-hierarchy)
@@ -766,7 +659,7 @@
 (defmethod e-step-names ::declare-step
   [state node]
   (let [sname (step-name node)
-        steps (cfilter step? node)
+        steps (xmlast/cfilter step? node)
         new-state (-> state
                       (assoc :in-scope-step-names #{sname})
                       (add-nested-step-names node))]
@@ -790,7 +683,7 @@
 
 (defmethod e-local-step-declarations ::step-source
   [state node]
-  (let [decls (cfilter step-declaration? node)
+  (let [decls (xmlast/cfilter step-declaration? node)
         ist (:in-scope-types state)
         merged-st (merge-step-types ist (map #(make-step-type %) decls))
         new-state (assoc state :in-scope-types merged-st)
@@ -808,11 +701,11 @@
 
 (defn- remove-step-declarations-with-no-type
   [node]
-  (let [filtered (cremove (fn [n]
+  (let [filtered (xmlast/cremove (fn [n]
                             (and (step-declaration? n)
                                  (nil? (get-attr n qn-a-type))))
                           node)]
-    (cassoc node filtered)))
+    (xmlast/cassoc node filtered)))
 
 (defmulti e-eliminate-dead-code node-hierarchy-type :hierarchy #'node-hierarchy)
 
@@ -841,6 +734,7 @@
 
 ;;; 
 
+
 (defn process-ast
   [ast]
   (let [pre-editors [e-use-when            ;process use-when
@@ -853,7 +747,7 @@
         initial-state {:in-scope-types stdlib
                        :in-scope-step-names #{}
                        :default-readable-port nil}]
-    (ast-edit ast initial-state pre-editors post-editors)))
+    (xmlast/ast-edit ast initial-state pre-editors post-editors)))
 
 (defn make-pipeline-ast
   [evts]

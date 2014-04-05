@@ -3,7 +3,7 @@
   :url "http://bitbucket.org/vojtechtoman/peccary"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[org.clojure/clojure "1.5.1"]
+  :dependencies [[org.clojure/clojure "1.6.0"]
                  [factual/fnparse "2.3.0"]]
   :main ^:skip-aot peccary.core
   :target-path "target/%s"
