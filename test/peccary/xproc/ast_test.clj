@@ -1,6 +1,8 @@
 (ns peccary.xproc.ast-test
   (:require [clojure.test :refer :all]
+            [peccary.testutil :refer :all]
             [peccary.xml :refer :all]
+            [peccary.xml.ast :as xmlast]
             [peccary.xml.parse :as xmlparse]
             [peccary.xproc.ast :as xprocast]
             [peccary.xproc.grammar :as xprocg]
@@ -89,45 +91,17 @@
                                  (qn "primary") "true"}}]}]})
 
 
-(defn parse-file
-  [file]
-  ;; Note: we explicitly realize the whole evts sequence here
-  ;; to avoid 'stream closed' errors
-  (with-open [f (java.io.FileInputStream. file)]
-    (let [evts (xmlparse/parse f)
-          c (count evts)]
-      evts)))
-
-(defn- parse-str
-  [s]
-  (xmlparse/parse-str s))
-
-;;; removes the location info from the AST tree to simplify AST comparisons
-;; (defn- strip-location-info
-;;   [ast]
-;;   (xprocast/ast-edit ast
-;;                      nil
-;;                      [(fn strip-location [node state]
-;;                         {:node (dissoc node :location) :state state})]))
-
-(defn- strip-ctx
-  [ast]
-  (xprocast/ast-edit ast
-                     nil
-                     [(fn strip-ctx [state node]
-                        {:node (dissoc node :ctx) :state state})]))
-
-(defn make-ast
+(defn- make-xproc-ast
   [evts]
   (xprocg/parse xprocg/main-pipeline-rf evts))
 
-(defn- file-ast
-  [file]
-  (-> file parse-file make-ast))
+(defn- str-xproc-ast
+  [str]
+  (str-ast str make-xproc-ast))
 
-(defn str-ast
-  [s]
-  (-> s parse-str make-ast))
+(defn- file-xproc-ast
+  [f]
+  (file-ast f make-xproc-ast))
 
 (defn- with-ignorable-whitespace
   [s]
@@ -136,25 +110,21 @@
       (clojure.string/replace "/>" "  /> <?a b?> 
 <!-- comment --> <!-- comment -->  ")))
 
-(defn- ast-eq
-  [ast1 ast2]
-  (= (strip-ctx ast1) (strip-ctx ast2)))
-
 ;;;
 
 (deftest invalid-xproc
   (testing "Parsing of invalid XProc source" ;TODO introduce a real error
-    (is (nil? (str-ast "<p:pipeline xmlns:p='http://www.w3.org/ns/xproc' version='1.0'/>")))))
+    (is (nil? (str-xproc-ast "<p:pipeline xmlns:p='http://www.w3.org/ns/xproc' version='1.0'/>")))))
 
 (deftest basic-ast-construction
   (testing "The results are the same if we parse a file or a string"
     (are [ast] (ast-eq ast identity-ast)
-         (file-ast identity-file)
-         (str-ast identity-str)))
+         (file-xproc-ast identity-file)
+         (str-xproc-ast identity-str)))
   
   (deftest ignorable-content-gets-ignored
     (testing "Ignorable really does get ignored"
-      (are [str] (ast-eq (str-ast str) identity-ast)
+      (are [str] (ast-eq (str-xproc-ast str) identity-ast)
            identity-str
            (with-ignorable-whitespace identity-str))))) 
 
@@ -181,7 +151,7 @@
 
 (deftest static-errors
   (testing "Multiple steps with the same name in the same scope"
-    (are [str] (thrown-xproc-error? "XS0002" (let [ast (str-ast str)]
+    (are [str] (thrown-xproc-error? "XS0002" (let [ast (str-xproc-ast str)]
                                                (xprocast/process-ast ast)))
          "<p:pipeline xmlns:p='http://www.w3.org/ns/xproc' version='1.0'>
             <p:identity name='dup'/>
