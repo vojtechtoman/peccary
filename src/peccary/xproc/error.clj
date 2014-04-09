@@ -6,15 +6,15 @@
 ;; (try (...)
 ;;    (catch clojure.lang.ExceptionInfo e ...))
 
-
 (defmacro deferror
   [code message]
   (let [var (symbol (str "err-" code))
         qname (xproc-error-qn code)
+        loc# (gensym "loc")
         cause# (gensym "cause")
         args# (gensym "args")]
-    `(defn ~var [& [~cause# ~args#]]
-       (throw (ex-info (str ~code ": " ~message) {:type :xproc-exception :code ~qname :message ~message :args ~args#} ~cause#)))))
+    `(defn ~var [& [~loc# ~args# ~cause#]]
+       (throw (ex-info (str ~code ": " ~message) {:type :xproc-exception :code ~qname :message ~message :args ~args# :location ~loc#} ~cause#)))))
 
 ;; static errors
 

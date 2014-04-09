@@ -158,6 +158,10 @@
   (when (node-hierarchy-type? node ::atomic-step)
     (:step-type node))) 
 
+(defn- attr-as-qname
+  [node attr]
+  (let [ns-ctx (ns-context node)]
+    (-> node (get-attr attr) (as-qname ns-ctx))))
 
 
 ;;; AST traversal/editing
@@ -365,13 +369,22 @@
   [node]
   (= :option (node-type node)))
 
+(defn- option-name
+  [opt-node]
+  (attr-as-qname opt-node qn-a-name))
+
 (defn- options
   [node]
   (cfilter option? node))
 
-(defn- option-name
-  [opt-node]
-  (get-attr opt-node qn-a-name))
+(defn- options-map
+  [node]
+  (let [opts (options node)]
+    (reduce (fn [m o]
+              (let [oname (option-name o)]
+                (assoc m oname o)))
+            {}
+            opts)))
 
 (defn- required-option?
   "returns nil if not set"
@@ -391,11 +404,6 @@
 (defn- make-step-signature
   [content]
   {:content content})
-
-(defn- attr-as-qname
-  [node attr]
-  (let [ns-ctx (ns-context node)]
-    (-> node (get-attr attr) (as-qname ns-ctx))))
 
 (defn- make-step-type
   [decl]
@@ -630,12 +638,22 @@
 
 (defn- check-options                    ;note: checks only long-form options
   [signature node]
-  ;; TODO err-XS0018 - invoking a step without specifying required option
-  ;; TODO err-XS0031 - option that is not declared
   ;; - ?? add missing options (taking what is needed from the signature)
-  ;; - check for duplicates
-  (let [opts (options node)]
-    node))
+  ;; - TODO check for duplicates
+  (let [opts (options-map node)
+        sopts (options-map signature)
+        onames (keys opts)
+        sonames (keys sopts)
+        unspecified (clojure.set/difference sonames onames)
+        unknown (clojure.set/difference onames sonames)]
+    (do
+      (map (fn check-required [name]
+             (when (-> sopts (get name) required-option?)
+               (err-XS0018 node name)))  ;required option not specified
+           unspecified)
+      (when-let [uo (first unknown)]
+        (err-XS0031 node uo))             ;unknown option
+      node)))
 
 (defn- atomic-step-process-options
   [signature node]
