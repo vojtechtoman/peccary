@@ -4,6 +4,6 @@
             [peccary.xml.ast :as xmlast]
             [peccary.xproc.ts.grammar :refer :all]))
 
-(defn make-test-ast
+(defn make-ts-ast
   [evts]
-  (xmlast/parse test-rf evts))
+  (xmlast/parse main-ts-rf evts))

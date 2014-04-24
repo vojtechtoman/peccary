@@ -62,6 +62,12 @@
                                           (ign-comm-rf ctx)
                                           (ign-pi-rf ctx))) :ignorable))
 
+(defn text-rf 
+  [ctx]
+  (fp/term (fn [evt]
+             (or (= :text (:type evt))
+                 (= :cdata (:type evt))))))
+
 ;;; 
 
 (defn- doc-start-rf 

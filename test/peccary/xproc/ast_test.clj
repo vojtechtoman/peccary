@@ -91,17 +91,13 @@
                                  (qn "primary") "true"}}]}]})
 
 
-(defn- make-xproc-ast
-  [evts]
-  (xprocg/parse xprocg/main-pipeline-rf evts))
-
 (defn- str-xproc-ast
   [str]
-  (str-ast str make-xproc-ast))
+  (str-ast str xprocast/make-pipeline-ast))
 
 (defn- file-xproc-ast
   [f]
-  (file-ast f make-xproc-ast))
+  (file-ast f xprocast/make-pipeline-ast))
 
 (defn- with-ignorable-whitespace
   [s]

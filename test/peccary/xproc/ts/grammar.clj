@@ -46,7 +46,7 @@
 ;;; 
 
 (deftselt title-rf {:qname tsv/qn-e-title
-                    :model #(fp/rep* (xmlast/well-formed-content-rf %))})
+                    :model #(fp/opt (xmlast/text-rf %))})
 
 
 (deftselt description-rf {:qname tsv/qn-e-description
@@ -65,16 +65,33 @@
                                 tsv/qn-a-name :required
                                 tsv/qn-a-value :required}})
 
-(deftselt input-rf {:qname tsv/qn-e-input
+(deftselt input-docs-rf {:qname tsv/qn-e-input
                     :attrs {tsv/qn-a-port :required
                             tsv/qn-a-href :optional}
-                    :model #(fp/alt (fp/rep* (document-rf %))
-                                    (xmlast/well-formed-content-rf %))})
+                         :model #(fp/rep* (document-rf %))})
 
-(deftselt output-rf {:qname tsv/qn-e-output
-                     :attrs {tsv/qn-a-port :required}
-                     :model #(fp/alt (fp/rep* (document-rf %))
-                                     (xmlast/well-formed-content-rf %))})
+(deftselt input-raw-rf {:qname tsv/qn-e-input
+                        :attrs {tsv/qn-a-port :required
+                                tsv/qn-a-href :optional}
+                        :model #(xmlast/well-formed-content-rf %)})
+
+(defn- input-rf
+  [ctx]
+  (fp/alt (input-docs-rf ctx)
+          (input-raw-rf ctx)))
+
+(deftselt output-docs-rf {:qname tsv/qn-e-output
+                          :attrs {tsv/qn-a-port :required}
+                          :model #(fp/rep* (document-rf %))})
+
+(deftselt output-raw-rf {:qname tsv/qn-e-output
+                         :attrs {tsv/qn-a-port :required}
+                         :model #(xmlast/well-formed-content-rf %)})
+
+(defn- output-rf
+  [ctx]
+  (fp/alt (output-docs-rf ctx)
+          (output-raw-rf ctx)))
 
 (deftselt pipeline-rf {:qname tsv/qn-e-pipeline
                        :attrs {tsv/qn-a-href :optional}
@@ -97,9 +114,16 @@
                                     (fp/opt (compare-pipeline-rf %))
                                     (fp/rep* (output-rf %)))})
 
+
+
 (deftselt test-suite-rf {:qname tsv/qn-e-test-suite
                          :attrs {tsv/qn-a-xinclude :optional}
                          :model #(fp/conc (title-rf %)
                                           (fp/rep+ (test-rf %)))})
 
 
+(defn main-ts-rf 
+  [ctx]
+  (xmlast/opt-doc-rf #(fp/alt (test-rf %)
+                              (test-suite-rf %))
+                     ctx))

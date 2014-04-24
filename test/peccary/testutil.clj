@@ -28,12 +28,17 @@
   [s make-ast]
   (-> s parse-str (evts-ast make-ast)))
 
-(defn- strip-ctx
-  [ast]
+(defn strip-key
+  [ast key]
   (xmlast/ast-edit ast
                    nil
-                   [(fn strip-ctx [state node]
-                      {:node (dissoc node :ctx) :state state})]))
+                   [(fn strip-k [state node]
+                      {:node (dissoc node key) :state state})]))
+
+(defn strip-ctx
+  [ast]
+  (strip-key ast :ctx))
+
 (defn ast-eq
   [ast1 ast2]
   (= (strip-ctx ast1) (strip-ctx ast2)))
