@@ -256,8 +256,7 @@
   (let [content (content node)]
     (remove pred? content)))
 
-
-(defn- make-ast-zipper
+(defn make-ast-zipper
   [ast]
   (zip/zipper (fn [n]
                 (not (cempty? n)))

@@ -4,12 +4,11 @@
             [peccary.xml.ast :as xmlast]
             [peccary.xml.parse :as xmlparse]
             [peccary.testutil :refer :all]
-            [peccary.xproc.ts.grammar :as tsg]
-            [peccary.xproc.ts.ast :as tsast]))
+            [peccary.xproc.ts :as ts]))
+
+(def test-suite "test/data/ts/test-suite.xml")
 
 (def declare-step-001 "test/data/ts/required/declare-step-001.xml")
-(def declare-step-001-str (slurp declare-step-001))
-
 
 (def declare-step-001-ast
   {:type :test
@@ -106,11 +105,11 @@
 )
 (defn- str-ts-ast
   [str]
-  (str-ast str tsast/make-ts-ast))
+  (str-ast str ts/make-ts-ast))
 
 (defn- file-ts-ast
   [f]
-  (file-ast f tsast/make-ts-ast))
+  (file-ast f ts/make-ts-ast))
 
 ;;;
 
@@ -121,5 +120,9 @@
 (deftest valid-test
   (testing "Parsing a valid XProc test document"
     (is (ast-eq (-> declare-step-001 file-ts-ast (strip-key :location)) declare-step-001-ast))))
+
+(deftest valid-test-suite
+  (testing "Parsing a valid XProc test suite document"
+    (is (-> test-suite file-ts-ast))))
 
 
