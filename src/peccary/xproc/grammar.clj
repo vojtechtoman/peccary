@@ -1,7 +1,7 @@
 (ns peccary.xproc.grammar
   (:gen-class)
   (:require [peccary.xml :refer :all]
-            [peccary.xml.ast :as xmlast]
+            [peccary.xml.grammar :as xmlg]
             [peccary.xproc.error :refer :all]
             [peccary.xproc.vocabulary :refer :all]
             [name.choi.joshua.fnparse :as fp]))
@@ -48,9 +48,9 @@
    (ns-decl? qname) :namespace-declaration
    :else :regular))
 
-(defn- create-xproc-ast-constructor
+(defn- create-xproc-ptree-constructor
   [type]
-  (fn xproc-ast-c [ctx selt content]
+  (fn xproc-ptree-c [ctx selt content]
     (let [attrs-grouped (group-by (fn [[attr-name _]]
                                     (attr-name-type attr-name))
                                   (:attrs selt))
@@ -68,17 +68,17 @@
   [var {qname :qname attrs :attrs model-rf :model type :type}]
   {:pre [(not (nil? qname))]}
   (let [ctype (or type `(keyword (local-name ~qname)))
-        constructor `(create-xproc-ast-constructor ~ctype)
+        constructor `(create-xproc-ptree-constructor ~ctype)
         elt-validator `(create-xproc-elt-validator ~qname ~attrs)]
-    `(xmlast/defelt ~var ~constructor ~model-rf ~elt-validator)))
+    `(xmlg/defelt ~var ~constructor ~model-rf ~elt-validator)))
 
 ;;; 
 
 (defxprocelt documentation-rf {:qname qn-e-documentation 
-                               :model #(fp/rep* (xmlast/well-formed-content-rf %))})
+                               :model #(fp/rep* (xmlg/well-formed-content-rf %))})
 
 (defxprocelt pipeinfo-rf {:qname qn-e-pipeinfo
-                          :model #(fp/rep* (xmlast/well-formed-content-rf %))})
+                          :model #(fp/rep* (xmlg/well-formed-content-rf %))})
 
 (defxprocelt empty-rf {:qname qn-e-empty})
 
@@ -98,7 +98,7 @@
 
 (defxprocelt inline-rf {:qname qn-e-inline
                         :attrs {qn-a-exclude-inline-prefixes :optional}
-                        :model #(xmlast/well-formed-content-rf %)})
+                        :model #(xmlg/well-formed-content-rf %)})
 
 (defn- connection-rf 
   [ctx]
@@ -150,7 +150,7 @@
                                                                 (inline-rf %)
                                                                 (data-rf %)))))})
 
-;; TODO atomic steps do not allow connections! (XS0042)- perhaps check while traversing the AST?
+;; TODO atomic steps do not allow connections! (XS0042)- perhaps check while traversing the ptree?
 (defxprocelt input-decl-rf {:qname qn-e-input
                             :attrs {qn-a-port :required
                                     qn-a-sequence :optional
@@ -162,7 +162,7 @@
                                                             (inline-rf %)
                                                             (data-rf %))))})
 
-;; TODO atomic steps do not allow connections! (XS0029)- perhaps check while traversing the AST?
+;; TODO atomic steps do not allow connections! (XS0029)- perhaps check while traversing the ptree?
 (defxprocelt output-decl-rf {:qname qn-e-output
                              :attrs {qn-a-port :required
                                      qn-a-sequence :optional
@@ -249,10 +249,10 @@
                                       (group-rf %)
                                       (catch-rf %))})
 
-(xmlast/defelt step-rf
-  (fn xproc-step-ast-c [ctx selt content]
+(xmlg/defelt step-rf
+  (fn xproc-step-ptree-c [ctx selt content]
     (let [qname (:qname selt)
-          c (create-xproc-ast-constructor :step)
+          c (create-xproc-ptree-constructor :step)
           m (c ctx selt content)]
       (-> m (assoc :step-type qname))))
   #(fp/rep* (fp/alt (input-rf %)        ;TODO support ignorable inside step?
@@ -341,20 +341,20 @@
 
 (defn import-target-rf 
   [ctx]
-  (xmlast/opt-doc-rf #(fp/alt (pipeline-rf %)
+  (xmlg/opt-doc-rf #(fp/alt (pipeline-rf %)
                               (declare-step-rf %)
                               (library-rf %))
                      ctx))
 
 (defn main-pipeline-rf 
   [ctx]
-  (xmlast/opt-doc-rf #(fp/alt (pipeline-rf %)
+  (xmlg/opt-doc-rf #(fp/alt (pipeline-rf %)
                               (declare-step-rf %))
                      ctx))
 
 (defn import-target-rf 
   [ctx]
-  (xmlast/opt-doc-rf #(fp/alt (pipeline-rf %)
+  (xmlg/opt-doc-rf #(fp/alt (pipeline-rf %)
                               (declare-step-rf %)
                               (library-rf %))
                      ctx))
@@ -390,4 +390,4 @@
 
 (defn parse
   [rf evts & [ctx]]
-  (xmlast/parse rf (wrap evts) ctx))
+  (xmlg/parse rf (wrap evts) ctx))

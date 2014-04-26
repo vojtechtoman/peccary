@@ -4,8 +4,9 @@
             [clojure.zip :as zip]
             [name.choi.joshua.fnparse :as fp]
             [peccary.xml :refer :all]
-            [peccary.xml.ast :as xmlast]
+            [peccary.xml.grammar :as xmlg]
             [peccary.xml.parse :as xmlparse]
+            [peccary.xproc.compile :as xprocc]
             [peccary.xproc.grammar :as xprocg]))
 
 ;;; vocabulary
@@ -36,7 +37,7 @@
 (def ^:private ^:const qn-a-name (qn "name"))
 (def ^:private ^:const qn-a-value (qn "value"))
 
-;;; FnParse/xmlast rules
+;;; FnParse xmlg rules
 
 (defn- create-ts-elt-validator
   [qname & [attrspec]]
@@ -56,9 +57,9 @@
          (or (empty? req-unspecified)
              (throw (ex-info (str "Required attribute(s) not specified: " req-unspecified) {}))))))))
 
-(defn- create-ts-ast-constructor
+(defn- create-ts-ptree-constructor
   [type]
-  (fn ts-ast-c [ctx selt content]
+  (fn ts-ptree-c [ctx selt content]
     (let [attrs (:attrs selt)
           loc (:location selt)
           posname (:posname selt)]
@@ -71,19 +72,19 @@
   [var {qname :qname attrs :attrs model-rf :model type :type}]
   {:pre [(not (nil? qname))]}
   (let [ctype (or type `(keyword (local-name ~qname)))
-        constructor `(create-ts-ast-constructor ~ctype)
+        constructor `(create-ts-ptree-constructor ~ctype)
         elt-validator `(create-ts-elt-validator ~qname ~attrs)]
-    `(xmlast/defelt ~var ~constructor ~model-rf ~elt-validator)))
+    `(xmlg/defelt ~var ~constructor ~model-rf ~elt-validator)))
 
 (deftselt title-rf {:qname qn-e-title
-                    :model #(fp/opt (xmlast/text-rf %))})
+                    :model #(fp/opt (xmlg/text-rf %))})
 
 (deftselt description-rf {:qname qn-e-description
-                          :model #(fp/rep* (xmlast/well-formed-content-rf %))})
+                          :model #(fp/rep* (xmlg/well-formed-content-rf %))})
 
 (deftselt document-rf {:qname qn-e-document
                        :attrs {qn-a-href :optional}
-                       :model #(fp/opt (xmlast/well-formed-content-rf %))})
+                       :model #(fp/opt (xmlg/well-formed-content-rf %))})
 
 (deftselt option-rf {:qname qn-e-option
                      :attrs {qn-a-name :required
@@ -102,7 +103,7 @@
 (deftselt input-raw-rf {:qname qn-e-input
                         :attrs {qn-a-port :required
                                 qn-a-href :optional}
-                        :model #(xmlast/well-formed-content-rf %)})
+                        :model #(xmlg/well-formed-content-rf %)})
 
 (defn- input-rf
   [ctx]
@@ -115,7 +116,7 @@
 
 (deftselt output-raw-rf {:qname qn-e-output
                          :attrs {qn-a-port :required}
-                         :model #(xmlast/well-formed-content-rf %)})
+                         :model #(xmlg/well-formed-content-rf %)})
 
 (defn- output-rf
   [ctx]
@@ -154,12 +155,21 @@
 
 (defn- main-ts-rf 
   [ctx]
-  (xmlast/opt-doc-rf #(fp/alt (test-rf %)
+  (xmlg/opt-doc-rf #(fp/alt (test-rf %)
                               (test-suite-rf %))
                      ctx))
 
-;;; actual test(suite) execution logic 
+(defn evts->ptree
+  [evts]
+  (xmlg/parse main-ts-rf evts))
 
+(defn- parse
+  [x]
+  (with-open [s (input-stream x)]
+    (let [evts (xmlparse/parse s)]
+      (evts->ptree evts))))
+
+;;; actual test(suite) execution logic 
 
 (defn- attrs
   [n]
@@ -171,9 +181,9 @@
 
 (defn- ctype-first
   [type n]
-  (->> n
-       (xmlast/cfilter (fn [n]
-                         (= type (:type n))))
+  (->> n (xprocc/cfilter
+          (fn [n]
+            (= type (:type n))))
        first))
 
 (defn- title
@@ -200,7 +210,9 @@
 (declare run)
 (defmethod zrun :test
   [z]
-  (let [n (zip/node z)]
+  (let [n (zip/node z)
+        parse-context (xprocc/parse-context n)]
+    (prn parse-context)
     (if-let [href (get-attr n qn-a-href)]
       (run href)
       (log-title n))))
@@ -217,21 +229,8 @@
 (defmethod zrun :default
   [z])
 
-
-;;; 
-
-(defn make-ts-ast
-  [evts]
-  (xmlast/parse main-ts-rf evts))
-
-(defn- parse-ts
-  [x]
-  (with-open [s (input-stream x)]
-    (let [evts (xmlparse/parse s)]
-      (make-ts-ast evts))))
-
 (defn run
   [x]
-  (let [ast (parse-ts x)
-        z (xmlast/make-ast-zipper ast)]
+  (let [ptree (parse x)
+        z (xprocc/ptree->zipper ptree)]
     (zrun z)))

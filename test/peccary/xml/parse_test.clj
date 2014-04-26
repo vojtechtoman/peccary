@@ -43,16 +43,16 @@
   (testing "Various examples of well-formed XML documents"
     (are [str exp] (evts-eq (parse-str str) exp)
          "<doc><para attr='foo'>bar</para><!-- comment --><![CDATA[cdata]]><?pi target?>baz</doc>"
-         [{:type :start-document}
-          {:type :start-element :qname (qn "doc") :attrs {}}
-          {:type :start-element :qname (qn "para") :attrs {(qn "attr") "foo"}}
-          {:type :text :data "bar"}
-          {:type :end-element :qname (qn "para")}
-          {:type :comment :data " comment "}
-          {:type :text :data "cdata"}   ;TODO wrong type should be :cdata!
-          {:type :pi :data "target" :target "pi"}
-          {:type :text :data "baz"}
-          {:type :end-element :qname (qn "doc")}
-          {:type :end-document}]
+         [{:type :start-document :base-uri nil :lang nil}
+          {:type :start-element :qname (qn "doc") :attrs {} :base-uri nil :lang nil}
+          {:type :start-element :qname (qn "para") :attrs {(qn "attr") "foo"} :base-uri nil :lang nil}
+          {:type :text :data "bar" :base-uri nil :lang nil}
+          {:type :end-element :qname (qn "para") :base-uri nil :lang nil}
+          {:type :comment :data " comment " :base-uri nil :lang nil}
+          {:type :text :data "cdata" :base-uri nil :lang nil}   ;TODO wrong type should be :cdata!
+          {:type :pi :data "target" :target "pi" :base-uri nil :lang nil}
+          {:type :text :data "baz" :base-uri nil :lang nil}
+          {:type :end-element :qname (qn "doc") :base-uri nil :lang nil}
+          {:type :end-document :base-uri nil :lang nil}]
          )))
 

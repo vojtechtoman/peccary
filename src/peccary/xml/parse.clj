@@ -1,6 +1,7 @@
 (ns peccary.xml.parse
   (:gen-class)
-  (:require [peccary.xml :refer :all])
+  (:require [peccary.xml :refer :all]
+            [peccary.util :as util])
   (:import (javax.xml.stream XMLInputFactory
                              XMLStreamReader
                              XMLStreamConstants)))
@@ -15,20 +16,23 @@
     {:offset offset :column column :line line :resource resource}))
 
 (defn- evt
-  [^XMLStreamReader sreader m]
+  [^XMLStreamReader sreader ctx m]
   (let [loc (location sreader)
-        base {:location loc}]
-    (merge base m)))
+        base-uri (-> ctx :base-uri first)
+        lang (-> ctx :lang first)
+        common {:location loc :base-uri base-uri :lang lang}
+        e (merge common m)]
+    {:evt e :ctx ctx}))
 
 ;;; 
 
 (defn- start-document
-  [^XMLStreamReader sreader]
-  (evt sreader {:type :start-document}))
+  [^XMLStreamReader sreader ctx]
+  (evt sreader ctx {:type :start-document}))
 
 (defn- end-document
-  [^XMLStreamReader sreader]
-  (evt sreader {:type :end-document}))
+  [^XMLStreamReader sreader ctx]
+  (evt sreader ctx {:type :end-document}))
 
 (defn- attr-hash
   [^XMLStreamReader sreader]
@@ -49,82 +53,114 @@
     with-ns-decls))
 
 (defn- start-element
-  [^XMLStreamReader sreader]
+  [^XMLStreamReader sreader ctx]
   (let [local-name (.getLocalName sreader)
         ns-uri (.getNamespaceURI sreader)
         prefix (.getPrefix sreader)
         qname (qn local-name ns-uri prefix)
-        attrs (attr-hash sreader)]
-    (evt sreader {:type :start-element :qname qname :attrs attrs})))
+        attrs (attr-hash sreader)
+        ctx-base-uri (-> ctx :base-uri first)
+        ctx-lang (-> ctx :lang first)
+        base-uri (util/resolve-uri ctx-base-uri (get attrs qn-xml-base))
+        lang (or (get attrs qn-xml-lang) ctx-lang)
+        newctx (-> ctx
+                   (update-in [:base-uri] #(cons base-uri %))
+                   (update-in [:lang] #(cons lang %)))]
+    (evt sreader newctx {:type :start-element :qname qname :attrs attrs})))
 
 (defn- end-element
-  [^XMLStreamReader sreader]
+  [^XMLStreamReader sreader ctx]
   (let [local-name (.getLocalName sreader)
         ns-uri (.getNamespaceURI sreader)
         prefix (.getPrefix sreader)
-        qname (qn local-name ns-uri prefix)]
-    (evt sreader {:type :end-element :qname qname})))
+        qname (qn local-name ns-uri prefix)
+        newctx (-> ctx
+                   (update-in [:base-uri] rest)
+                   (update-in [:lang] rest))]
+    (evt sreader ctx {:type :end-element :qname qname})))
 
 (defn- text
-  [^XMLStreamReader sreader]
+  [^XMLStreamReader sreader ctx]
   (let [data (.getText sreader)]
-    (evt sreader {:type :text :data data})))
+    (evt sreader ctx {:type :text :data data})))
 
 (defn- comm
-  [^XMLStreamReader sreader]
+  [^XMLStreamReader sreader ctx]
   (let [data (.getText sreader)]
-    (evt sreader {:type :comment :data data})))
+    (evt sreader ctx {:type :comment :data data})))
 
 (defn- cdata
-  [^XMLStreamReader sreader]
+  [^XMLStreamReader sreader ctx]
   (let [data (.getText sreader)]
-    (evt sreader {:type :cdata :data data})))
+    (evt sreader ctx {:type :cdata :data data})))
 
 (defn- pi
-  [^XMLStreamReader sreader]
+  [^XMLStreamReader sreader ctx]
   (let [target (.getPITarget sreader)
         data (.getPIData sreader)]
-    (evt sreader {:type :pi :target target :data data})))
+    (evt sreader ctx {:type :pi :target target :data data})))
 
-                                        ; Note, sreader is mutable and mutated here in pull-seq, but it's
-                                        ; protected by a lazy-seq so it's thread-safe.
+;; Note, sreader is mutable and mutated here in pull-seq, but it's
+;; protected by a lazy-seq so it's thread-safe.
 (defn- pull-seq-doc
   "Creates a seq of events. The XMLStreamConstants/SPACE clause below doesn't seem to
 be triggered by the JDK StAX parser, but is by others. Leaving in to be more complete."
-  [^XMLStreamReader sreader]
+  [^XMLStreamReader sreader & [ctx]]
   (lazy-seq
    (loop []
      (condp == (.next sreader)
        XMLStreamConstants/START_ELEMENT
-       (cons (start-element sreader)
-             (pull-seq-doc sreader))
+       (let [ec (start-element sreader ctx)
+             evt (:evt ec)
+             newctx (:ctx ec)]
+         (cons evt
+               (pull-seq-doc sreader newctx)))
        XMLStreamConstants/END_ELEMENT
-       (cons (end-element sreader)
-             (pull-seq-doc sreader))
+       (let [ec (end-element sreader ctx)
+             evt (:evt ec)
+             newctx (:ctx ec)]
+         (cons evt
+               (pull-seq-doc sreader newctx)))
        XMLStreamConstants/CHARACTERS
-       (cons (text sreader)
-             (pull-seq-doc sreader))
+       (let [ec (text sreader ctx)
+             evt (:evt ec)
+             newctx (:ctx ec)]
+         (cons evt
+               (pull-seq-doc sreader newctx)))
        XMLStreamConstants/COMMENT
-       (cons (comm sreader)
-             (pull-seq-doc sreader))
+       (let [ec (comm sreader ctx)
+             evt (:evt ec)
+             newctx (:ctx ec)]
+         (cons evt
+               (pull-seq-doc sreader newctx)))
        XMLStreamConstants/CDATA
-       (cons (cdata sreader)
-             (pull-seq-doc sreader))
+       (let [ec (cdata sreader ctx)
+             evt (:evt ec)
+             newctx (:ctx ec)]
+         (cons evt
+               (pull-seq-doc sreader newctx)))
        XMLStreamConstants/PROCESSING_INSTRUCTION
-       (cons (pi sreader)
-             (pull-seq-doc sreader))
+       (let [ec (pi sreader ctx)
+             evt (:evt ec)
+             newctx (:ctx ec)]
+         (cons evt
+               (pull-seq-doc sreader newctx)))
        XMLStreamConstants/END_DOCUMENT
-       (list (end-document sreader))
-       (recur)
+       (let [ec (end-document sreader ctx)
+             evt (:evt ec)]
+         (list evt))
+         (recur)
        ))))
 
 (defn- pull-seq
   "Creates a seq of events. The XMLStreamConstants/SPACE clause below doesn't seem to
 be triggered by the JDK StAX parser, but is by others. Leaving in to be more complete."
-  [^XMLStreamReader sreader]
-  (cons
-   (start-document sreader)
-   (pull-seq-doc sreader)))
+  [^XMLStreamReader sreader & [ctx]]
+  (let [ec (start-document sreader ctx)
+        evt (:evt ec)
+        newctx (:ctx ec)]
+    (cons evt
+          (pull-seq-doc sreader newctx))))
 
 (def ^:private xml-input-factory-props
   {:allocator javax.xml.stream.XMLInputFactory/ALLOCATOR

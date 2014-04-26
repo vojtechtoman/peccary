@@ -1,14 +1,14 @@
 (ns peccary.testutil
-  (:require [peccary.xml :refer :all]
-            [peccary.xml.ast :as xmlast]
+  (:require [clojure.java.io :as jio]
+            [peccary.xml :refer :all]
             [peccary.xml.parse :as xmlparse]))
 
-(defn parse-file
-  [file]
+(defn parse
+  [x]
   ;; Note: we explicitly realize the whole evts sequence here
   ;; to avoid 'stream closed' errors
-  (with-open [f (java.io.FileInputStream. file)]
-    (let [evts (xmlparse/parse f)
+  (with-open [stream (jio/input-stream x)]
+    (let [evts (xmlparse/parse stream)
           c (count evts)]
       evts)))
 
@@ -16,31 +16,14 @@
   [s]
   (xmlparse/parse-str s))
 
-(defn evts-ast
-  [evts make-ast]
-  (make-ast evts))
+(defn evts->ptree
+  [evts e->p]
+  (e->p evts))
 
-(defn file-ast
-  [file make-ast]
-  (-> file parse-file (evts-ast make-ast)))
+(defn file->ptree
+  [file e->p]
+  (-> file parse e->p))
 
-(defn str-ast
-  [s make-ast]
-  (-> s parse-str (evts-ast make-ast)))
-
-(defn strip-key
-  [ast key]
-  (xmlast/ast-edit ast
-                   nil
-                   [(fn strip-k [state node]
-                      {:node (dissoc node key) :state state})]))
-
-(defn strip-ctx
-  [ast]
-  (strip-key ast :ctx))
-
-(defn ast-eq
-  [ast1 ast2]
-  (= (strip-ctx ast1) (strip-ctx ast2)))
-
-
+(defn str->ptree
+  [s e->p]
+  (-> s parse-str e->p))
